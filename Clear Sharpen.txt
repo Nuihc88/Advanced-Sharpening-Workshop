@@ -1,0 +1,82 @@
+// Clear Sharpen=ps_3_0
+// Code by Nuihc88
+// Quick and dirty rewrite of initial PhiSharpen Code from memory after SSD failure.
+
+#ifndef s0
+	sampler s0 :	register(s0);
+	float4 p0 :		register(c0);
+	#define width	(p0[0])
+	#define height	(p0[1])
+	#define px		(1./p0[0])
+	#define py		(1./p0[1])
+#endif
+
+// -- Settings --
+
+#define TextureSharpenFactor 3.2		// Optimal range: ?
+#define EdgeSharpenFactor 2.4			// Optimal range: ?
+#define HighThreshold 0.667				// Optimal range: ?
+#define LowThreshold 0.333				// Optimal range: ?
+#define EdgeDetection 0
+#define BlurMaskKernel 0
+
+// -- Main Code --
+//	[c23,c24,c09,c10,c11]
+//	[c22,c08,c01,c02,c12]
+//	[c21,c07,c00,c03,c13]
+//	[c20,c06,c05,c04,c14]
+//	[c19,c18,c17,c16,c15]
+float4 main( float2 tex : TEXCOORD0 ) : COLOR {	float4 c00 = tex2D(s0, tex);
+float4 c01 = tex2D(s0, tex + float2(0,-py));	float4 c02 = tex2D(s0, tex + float2(px,-py));
+float4 c03 = tex2D(s0, tex + float2(px,0));		float4 c04 = tex2D(s0, tex + float2(px,py));
+float4 c05 = tex2D(s0, tex + float2(0,py));		float4 c06 = tex2D(s0, tex + float2(-px,py));
+float4 c07 = tex2D(s0, tex + float2(-px,0));	float4 c08 = tex2D(s0, tex + float2(-px,-py));
+float4 c09 = tex2D(s0, tex + float2(0,-py*2));	float4 c10 = tex2D(s0, tex + float2( px,-py*2));
+float4 c11 = tex2D(s0, tex + float2(px,-py)*2);	float4 c12 = tex2D(s0, tex + float2( px*2,-py));
+float4 c13 = tex2D(s0, tex + float2(px*2,0));	float4 c14 = tex2D(s0, tex + float2( px*2,py));
+float4 c15 = tex2D(s0, tex + float2(px,py)*2);	float4 c16 = tex2D(s0, tex + float2(-px,py*2));
+float4 c17 = tex2D(s0, tex + float2(0,py*2));	float4 c18 = tex2D(s0, tex + float2(-px,py*2));
+float4 c19 = tex2D(s0, tex + float2(-px,py)*2);	float4 c20 = tex2D(s0, tex + float2(-px*2,py));
+float4 c21 = tex2D(s0, tex + float2(-px*2,0));	float4 c22 = tex2D(s0, tex + float2(-px*2,-py));
+float4 c23 = tex2D(s0, tex + float2(-px,-py)*2);float4 c24 = tex2D(s0, tex + float2(-px,-py*2));
+
+// -- Blur Mask Kernel --
+#if BlurMaskKernel == 0 // 5x5 Fibonacci Kernel - Just about perfect balance between smooth and sharp.
+//float BlurTier0 = 13;	//
+float BlurTier1 = 8;	//	[1 , 2 , 3 , 2 , 1]
+float BlurTier2 = 5;	//	[2 , 5 , 8 , 5 , 2]
+float BlurTier3 = 3;	//	[3 , 8 ,13 , 8 , 3]
+float BlurTier4 = 2;	//	[2 , 5 , 8 , 5 , 2]
+float BlurTier5 = 1;	//	[1 , 2 , 3 , 2 , 1]
+float4	Mask  = BlurTier1*(c01+c03+c05+c07);	Mask += BlurTier2*(c02+c04+c06+c08);
+		Mask += BlurTier3*(c09+c13+c17+c21);	Mask += BlurTier4*(c10+c12+c14+c16+c18+c20+c22+c24);
+		Mask += BlurTier5*(c11+c15+c19+c23);	//Mask += BlurTier0*c00; 
+float4	Blur  = Mask/84;
+//float4	Blur  = Mask/97;
+#endif
+
+
+// -- Edge Detection --
+#if EdgeDetection == 0 // Half-Diagonal Scharr-Operators -  Excellent for Anime, CGI & Live content alike.
+// Meant to reduce amplification of aliasing and interlacing artefacts over regular Scharr operators, as well as required number of math-operations for a given result.
+// [ -3,-10,-10 ]	[ 10,  3, -3]	[ -3,  3, 10]	[-10,-10, -3]
+// [  3,  0, -3 ]	[ 10,  0,-10]	[-10,  0, 10]	[ -3,  0,  3]
+// [ 10, 10,  3 ]	[  3, -3,-10]	[-10, -3,  3]	[  3, 10, 10]
+float EdgeTier1 = 10; float EdgeTier2 = 3;
+float Edge1 = ((c05+c06)*EdgeTier1+(c04+c07)*EdgeTier2)-((c01+c02)*EdgeTier1+(c08+c03)*EdgeTier2);
+float Edge2 = ((c07+c08)*EdgeTier1+(c06+c01)*EdgeTier2)-((c03+c04)*EdgeTier1+(c02+c05)*EdgeTier2);
+float Edge3 = ((c02+c03)*EdgeTier1+(c01+c04)*EdgeTier2)-((c06+c07)*EdgeTier1+(c05+c08)*EdgeTier2);
+float Edge4 = ((c04+c05)*EdgeTier1+(c03+c06)*EdgeTier2)-((c08+c01)*EdgeTier1+(c07+c02)*EdgeTier2);
+#endif
+
+
+float	EdgeMath = abs(dot(Edge1,Edge1)+dot(Edge2,Edge2)+dot(Edge3,Edge3)+dot(Edge4,Edge4));
+
+
+// -- DoTheMaths --
+if (EdgeMath>=dot(HighThreshold,HighThreshold))
+		{return c00*(EdgeSharpenFactor) - Blur*(EdgeSharpenFactor-1);}
+if (EdgeMath>=dot(LowThreshold,LowThreshold) && EdgeMath<dot(HighThreshold,HighThreshold))
+		{return c00*(TextureSharpenFactor) - Blur*(TextureSharpenFactor-1);}
+else	{return c00;}
+}

@@ -1,0 +1,420 @@
+// Advanced (Un)Sharpen Workshop - Development Edition=ps_3_0
+// Branch Codename: Context Aware Sharpening
+// Code By Nuihc88 (inspired by 'Sharpen Complex 2' and 'LumaSharpen')
+// Tries to apply a theorical understanding of optics and refraction onto image processing.
+
+	sampler s0 :	register(s0);
+	float4 p0 :		register(c0);
+	//#define width	(p0[0])
+	//#define height(p0[1])
+	#define px		(1./p0[0])
+	#define py		(1./p0[1])
+	//#define tex2D(s,p) //edgeTex2D(s,p) plainTex2D(s,p) blurTex2D(s,p)
+
+
+// -- Settings --
+
+		// Strength of Edge Sharpening. Also meant to take negative values for blurring, but this is broken; non-deterministic behavour; need to redo the maths.
+#define EdgeSharpenFactor 2.4		// Optimal range: (0.4) - (2.4) 1 - 3
+		// Strength of Texture Sharpening. Also meant to take negative values for blurring, but this is broken; non-deterministic behavour; need to redo the maths.
+#define TextureSharpenFactor 3.2		// Optimal range: (1.6) - (3.2) 2 - 6
+		// Where Texture ends and Edge starts.
+#define HighThreshold 0.666//(2/3)			// Optimal range: ?
+		// Where gradient protection ends and Texture starts.
+#define LowThreshold 0.333//(1/3)			// Optimal range: ?
+		// Not implemented yet.
+#define HysteresisThreshold (1/2)	// Optimal range: ?
+
+		// Select which Edge Detection Operator to use.
+#define EdgeDetector 22
+		// Choose whether to use Semi-Diagonal or Regular Edge Detection Operators.
+#define SemiDiagonalOperators 1 // 0=Off 1=On
+		// Select which Edge Detection Operators to use. //Not Implemented yet.
+#define OperatorSet 1
+		// Select which edge detection math to use.
+#define EdgeMathMode 0
+
+		// BarEdgeLine Prevention for incorrectly cropped material. 1-3 Least to Most aggressive, 0 disables.
+#define BarEdgeLinePrevention	2
+#define BarThreshold			2//1.5	c00.r+c00.g+c00.b// Recommended input values are '0' '1' & 'c00.r+c00.g+c00.b'
+
+		// Strength of Pre-Mask Blurring. //Not Implemented yet.
+#define PreMaskFactor 1
+		// Select which Blur Kernel to use for Pre-Blurring.
+#define PreMaskKernel 1
+
+		// Select which Blur Kernel to use for Unsharp Masking.
+#define BlurMaskKernel 5
+
+		// Removes original pixel's Blur influence, with DynamicSharpening it produces a light spatial smoothing effect similar to UnDot; makes things look more reflective and suppresses some mosquito noise at no performance cost. ???doublecheck???
+#define MaskSmooth 1				// 0=Off, 1 = On
+
+		// Makes sharpening strength proportional to the probability that an Edge has been detected. Reduces Sharpening Strength Factors.
+#define DynamicSharpening 0 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
+
+		// Makes sharpening strength proportional to the probability that an Edge has been detected. Reduces Sharpening Strength Factors.
+#define TextureEnhancement 0 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
+
+// -- Main Code --
+//	[c23,c24,c09,c10,c11]
+//	[c22,c08,c01,c02,c12]
+//	[c21,c07,c00,c03,c13]
+//	[c20,c06,c05,c04,c14]
+//	[c19,c18,c17,c16,c15]
+float4 main(float2 tex : TEXCOORD0) : COLOR {	float4 c00 = tex2D(s0, tex);
+float4 c01 = tex2D(s0, tex + float2(0,-py));	float4 c02 = tex2D(s0, tex + float2(px,-py));
+float4 c03 = tex2D(s0, tex + float2(px,0));		float4 c04 = tex2D(s0, tex + float2(px,py));
+float4 c05 = tex2D(s0, tex + float2(0,py));		float4 c06 = tex2D(s0, tex + float2(-px,py));
+float4 c07 = tex2D(s0, tex + float2(-px,0));	float4 c08 = tex2D(s0, tex + float2(-px,-py));
+float4 c09 = tex2D(s0, tex + float2(0,-py*2));	float4 c10 = tex2D(s0, tex + float2( px,-py*2));
+float4 c11 = tex2D(s0, tex + float2(px,-py)*2);	float4 c12 = tex2D(s0, tex + float2( px*2,-py));
+float4 c13 = tex2D(s0, tex + float2(px*2,0));	float4 c14 = tex2D(s0, tex + float2( px*2,py));
+float4 c15 = tex2D(s0, tex + float2(px,py)*2);	float4 c16 = tex2D(s0, tex + float2(-px,py*2));
+float4 c17 = tex2D(s0, tex + float2(0,py*2));	float4 c18 = tex2D(s0, tex + float2(-px,py*2));
+float4 c19 = tex2D(s0, tex + float2(-px,py)*2);	float4 c20 = tex2D(s0, tex + float2(-px*2,py));
+float4 c21 = tex2D(s0, tex + float2(-px*2,0));	float4 c22 = tex2D(s0, tex + float2(-px*2,-py));
+float4 c23 = tex2D(s0, tex + float2(-px,-py)*2);float4 c24 = tex2D(s0, tex + float2(-px,-py*2));
+
+#if BlurMaskKernel == 16 || BarEdgeLinePrevention == 4
+// -- Main Code --
+//	[c46,c47,c48,c25,c26,c27,c28] c25 c31 c37 c43
+//	[c45,c23,c24,c09,c10,c11,c29] c26 c30 c32 c36 c38 c42 c44 c48
+//	[c44,c22,c08,c01,c02,c12,c30] c27 c29 c33 c35 c39 c41 c45 c47
+//	[c43,c21,c07,c00,c03,c13,c31] c28 c34 c40 c46
+//	[c42,c20,c06,c05,c04,c14,c32]
+//	[c41,c19,c18,c17,c16,c15,c33]
+//	[c40,c39,c38,c37,c36,c35,c34]
+float4 c25 = tex2D(s0, tex + float2(0,-py*3));		float4 c26 = tex2D(s0, tex + float2(px,-py*3));
+float4 c27 = tex2D(s0, tex + float2(px*2,-py*3));	float4 c28 = tex2D(s0, tex + float2(px,-py)*3);
+float4 c29 = tex2D(s0, tex + float2(px*3,-py*2));	float4 c30 = tex2D(s0, tex + float2(px*3,-py));
+float4 c31 = tex2D(s0, tex + float2(px*3,0));		float4 c32 = tex2D(s0, tex + float2(px*3,py));
+float4 c33 = tex2D(s0, tex + float2(px*3,py*2));	float4 c34 = tex2D(s0, tex + float2(px,py)*3);
+float4 c35 = tex2D(s0, tex + float2(px*2,py*3));	float4 c36 = tex2D(s0, tex + float2(px,py*3));
+float4 c37 = tex2D(s0, tex + float2(0,py*3));		float4 c38 = tex2D(s0, tex + float2(-px,py*3));
+float4 c39 = tex2D(s0, tex + float2(-px*2,py*3));	float4 c40 = tex2D(s0, tex + float2(-px,py)*3);
+float4 c41 = tex2D(s0, tex + float2(-px*3,py*2));	float4 c42 = tex2D(s0, tex + float2(-px*3,py));
+float4 c43 = tex2D(s0, tex + float2(-px*3,0));		float4 c44 = tex2D(s0, tex + float2(-px*3,-py));
+float4 c45 = tex2D(s0, tex + float2(-px*3,-py*2));	float4 c46 = tex2D(s0, tex + float2(-px,-py)*3);
+float4 c47 = tex2D(s0, tex + float2(-px*2,-py*3));	float4 c48 = tex2D(s0, tex + float2(-px,-py*3));
+#endif
+
+// Pseudo-Plain Detector 
+// Assesses the probability of two pixels being on the same plain and then reduces it's influence with the resulting multiplier.
+#if BlurMaskKernel == 5
+// use normalized inverted dot product from pixel rgb as a multiplier for Pseudo-Plain Detection. 
+float Normalizer = 256; // where to place abs?/Is it needed?
+float s01 = 1-saturate( abs(dot(c00.rgb,c01.rgb) )/Normalizer); float s02 = 1-saturate( abs(dot(c00.rgb,c02.rgb) )/Normalizer); float s03 = 1-saturate( abs(dot(c00.rgb,c03.rgb) )/Normalizer);
+float s04 = 1-saturate( abs(dot(c00.rgb,c04.rgb) )/Normalizer); float s05 = 1-saturate( abs(dot(c00.rgb,c05.rgb) )/Normalizer); float s06 = 1-saturate( abs(dot(c00.rgb,c06.rgb) )/Normalizer);
+float s07 = 1-saturate( abs(dot(c00.rgb,c07.rgb) )/Normalizer); float s08 = 1-saturate( abs(dot(c00.rgb,c08.rgb) )/Normalizer); float s09 = 1-saturate( abs(dot(c00.rgb,c09.rgb) )/Normalizer);
+float s10 = 1-saturate( abs(dot(c00.rgb,c10.rgb) )/Normalizer); float s11 = 1-saturate( abs(dot(c00.rgb,c11.rgb) )/Normalizer); float s12 = 1-saturate( abs(dot(c00.rgb,c12.rgb) )/Normalizer);
+float s13 = 1-saturate( abs(dot(c00.rgb,c13.rgb) )/Normalizer); float s14 = 1-saturate( abs(dot(c00.rgb,c14.rgb) )/Normalizer); float s15 = 1-saturate( abs(dot(c00.rgb,c15.rgb) )/Normalizer);
+float s16 = 1-saturate( abs(dot(c00.rgb,c16.rgb) )/Normalizer); float s17 = 1-saturate( abs(dot(c00.rgb,c17.rgb) )/Normalizer); float s18 = 1-saturate( abs(dot(c00.rgb,c18.rgb) )/Normalizer);
+float s19 = 1-saturate( abs(dot(c00.rgb,c19.rgb) )/Normalizer); float s20 = 1-saturate( abs(dot(c00.rgb,c20.rgb) )/Normalizer); float s21 = 1-saturate( abs(dot(c00.rgb,c21.rgb) )/Normalizer);
+float s22 = 1-saturate( abs(dot(c00.rgb,c22.rgb) )/Normalizer); float s23 = 1-saturate( abs(dot(c00.rgb,c23.rgb) )/Normalizer); float s24 = 1-saturate( abs(dot(c00.rgb,c24.rgb) )/Normalizer);
+
+//float4(1 - (s00.rgb - s01.rgb), s00.a);
+
+float4 f01 = c01*s01; float4 f02 = c02*s02; float4 f03 = c03*s03; float4 f04 = c04*s04;
+float4 f05 = c05*s05; float4 f06 = c06*s06; float4 f07 = c07*s07; float4 f08 = c08*s08;
+float4 f09 = c09*s09; float4 f10 = c10*s10; float4 f11 = c11*s11; float4 f12 = c12*s12;
+float4 f13 = c13*s13; float4 f14 = c14*s14; float4 f15 = c15*s15; float4 f16 = c16*s16;
+float4 f17 = c17*s17; float4 f18 = c18*s18; float4 f19 = c19*s19; float4 f20 = c20*s20;
+float4 f21 = c21*s21; float4 f22 = c22*s22; float4 f23 = c23*s23; float4 f24 = c24*s24;
+#endif
+
+//float4 s00 = 
+// -- Blur Mask Kernel --
+
+#if BlurMaskKernel == 0 // 5x5 Fibonacci Kernel - An approcimation of the Golden Ratio, gives excellent balance between smoothness and sharpness.
+float BlurTier1 = 8;	//	[1 , 2 , 3 , 2 , 1]
+float BlurTier2 = 5;	//	[2 , 5 , 8 , 5 , 2]
+float BlurTier3 = 3;	//	[3 , 8 ,13 , 8 , 3]
+float BlurTier4 = 2;	//	[2 , 5 , 8 , 5 , 2]
+float BlurTier5 = 1;	//	[1 , 2 , 3 , 2 , 1]
+float4	Mask  = BlurTier1*(c01+c03+c05+c07);
+		Mask += BlurTier2*(c02+c04+c06+c08);
+		Mask += BlurTier3*(c09+c13+c17+c21);
+		Mask += BlurTier4*(c10+c12+c14+c16+c18+c20+c22+c24);
+		Mask += BlurTier5*(c11+c15+c19+c23);
+#endif
+#if BlurMaskKernel == 0 && MaskSmooth == 1
+float4	Blur  = Mask/84;
+#elif BlurMaskKernel == 0 && MaskSmooth == 0
+float BlurTier0 = 13; Mask += BlurTier0*c00; float4	Blur  = Mask/97;
+#endif
+
+#if BlurMaskKernel == 1 // 5x5 Gradient Kernel - Very Smooth and reflective. Based on an earlier 8(+1) texture fetch approach inspired by LumaSharpen, but which was abandoned as it would have little to no performance benefit when used together with Edge Detection and/or Plain Detection...
+float BlurTier1 = 6;	//	[1 , 2 , 3 , 2 , 1]	//	[1/9,2/9,1/3,2/9,1/9]
+float BlurTier2 = 4;	//	[2 , 4 , 6 , 4 , 2]	//	[2/9,4/9,2/3,4/9,2/9]
+float BlurTier3 = 3;	//	[3 , 6 , 9 , 6 , 3]	//	[1/3,2/3, 1 ,2/3,1/3]
+float BlurTier4 = 2;	//	[2 , 4 , 6 , 4 , 2]	//	[2/9,4/9,2/3,4/9,2/9]
+float BlurTier5 = 1;	//	[1 , 2 , 3 , 2 , 1]	//	[1/9,2/9,1/3,2/9,1/9]
+float4	Mask  = BlurTier1*(c01+c03+c05+c07);
+		Mask += BlurTier2*(c02+c04+c06+c08);
+		Mask += BlurTier3*(c09+c13+c17+c21);
+		Mask += BlurTier4*(c10+c12+c14+c16+c18+c20+c22+c24);
+		Mask += BlurTier5*(c11+c15+c19+c23);
+#endif
+#if BlurMaskKernel == 1 && MaskSmooth == 1
+float4	Blur  = Mask/72;
+#elif BlurMaskKernel == 1 && MaskSmooth == 0
+float BlurTier0 = 9; Mask += BlurTier0*c00; float4	Blur  = Mask/81;
+#endif
+
+// -- Main Code --
+//	[c23,c24,c09,c10,c11]
+//	[c22,c08,c01,c02,c12]
+//	[c21,c07,c00,c03,c13]
+//	[c20,c06,c05,c04,c14]
+//	[c19,c18,c17,c16,c15]
+#if BlurMaskKernel == 3 // 5x5 Test - An experiment to reduce the instruction count; seems to work, but is performance affected? Requires further testing.
+int2x3 BlurTiers = { 1, 2, 3, 5, 8, 13 }; 		// 	[1 , 2 , 3 , 2 , 1]
+float4	Blur  = BlurTiers._22*(c01+c03+c05+c07);//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers._21*(c02+c04+c06+c08);//	[3 , 8 ,13 , 8 , 3]
+		Blur += BlurTiers._13*(c09+c13+c17+c21);//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers._11*(c11+c15+c19+c23);//	[1 , 2 , 3 , 2 , 1]
+		Blur += BlurTiers._12*(c10+c12+c14+c16+c18+c20+c22+c24);
+#endif
+#if BlurMaskKernel == 3 && MaskSmooth == 1
+	Blur  /= 84;
+#elif BlurMaskKernel == 3 && MaskSmooth == 0
+	Blur += BlurTiers._23*c00;	Blur  /= 97;
+#endif
+
+#if BlurMaskKernel == 4 // 5x5 Test - An experiment to reduce the instruction count; seems to work, but is performance affected? Requires further testing.
+int3 BlurTiers[2] = { 1, 2, 3, 5, 8, 13 }; 			// 	[1 , 2 , 3 , 2 , 1]
+float4	Blur  = BlurTiers[1][1]*(c01+c03+c05+c07);	//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers[1][0]*(c02+c04+c06+c08);	//	[3 , 8 ,13 , 8 , 3]
+		Blur += BlurTiers[0][2]*(c09+c13+c17+c21);	//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers[0][0]*(c11+c15+c19+c23);	//	[1 , 2 , 3 , 2 , 1]
+		Blur += BlurTiers[0][1]*(c10+c12+c14+c16+c18+c20+c22+c24);
+#endif
+#if BlurMaskKernel == 4 && MaskSmooth == 1
+	Blur  /= 84;
+#elif BlurMaskKernel == 4 && MaskSmooth == 0
+	Blur += BlurTiers[1][2]*c00;	Blur  /= 97;
+#endif
+
+#if BlurMaskKernel == 5 // 5x5 Test - with Dynamic Smoothing Smart Cap
+int3 BlurTiers[2] = { 1, 2, 3, 5, 8, 13 }; 			// 	[1 , 2 , 3 , 2 , 1]
+float4	Blur  = BlurTiers[1][1]*(f01+f03+f05+f07);	//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers[1][0]*(f02+f04+f06+f08);	//	[3 , 8 ,13 , 8 , 3]
+		Blur += BlurTiers[0][2]*(f09+f13+f17+f21);	//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers[0][0]*(f11+f15+f19+f23);	//	[1 , 2 , 3 , 2 , 1]
+		Blur += BlurTiers[0][1]*(f10+f12+f14+f16+f18+f20+f22+f24);
+#endif
+#if BlurMaskKernel == 5 && MaskSmooth == 1
+	Blur  /= 84;
+#elif BlurMaskKernel == 5 && MaskSmooth == 0
+	Blur += BlurTiers[1][2]*c00;	Blur  /= 97;
+#endif
+
+// -- Edge Detection Operator --
+
+#if EdgeDetector == 2 // Scharr-Operators -  Excellent for Anime, CGI & Live content alike.
+// [ -3,-10,-3 ]	[  3,  0, -3 ]	[  0,  3, 10 ]	[-10, -3,  0 ]
+// [  0,  0, 0 ]	[ 10,  0,-10 ]	[ -3,  0,  3 ]	[ -3,  0,  3 ]
+// [  3, 10, 3 ]	[  3,  0, -3 ]	[-10, -3,  0 ]	[  0,  3, 10 ]
+// Semi-Diagonals // Meant to reduce amplification of aliasing and interlacing artefacts over regular operators, slightly softer results on average.
+// [ -3,-10,-10 ]	[ 10,  3, -3 ]	[ -3,  3, 10]	[-10,-10, -3 ]
+// [  3,  0, -3 ]	[ 10,  0,-10 ]	[-10,  0, 10 ]	[ -3,  0,  3 ]
+// [ 10, 10,  3 ]	[  3, -3,-10 ]	[-10, -3,  3 ]	[  3, 10, 10 ]
+float4 EdgeTierData = { 3, 10, 0.16, 0.26 };
+#endif
+
+#if EdgeDetector == 21 // Low-Precision GoldenRatio-Operators -   After i realized that 10:(3*2) of Scharr is pretty close to the golden ratio, i started trying out other approximations of it, these give very pleasing results.
+// Experimental ( 1.625:1 ) approcimation of Phi; where the smaller value is divided across two pixels.
+// [ -4,-13,-4 ]	[  4,  0, -4 ]	[  0,  4, 13 ]	[-13, -4,  0 ]
+// [  0,  0, 0 ]	[ 13,  0,-13 ]	[ -4,  0,  4 ]	[ -4,  0,  4 ]
+// [  4, 13, 4 ]	[  4,  0, -4 ]	[-13, -4,  0 ]	[  0,  4, 13 ]
+// Semi-Diagonals // Meant to reduce amplification of aliasing and interlacing artefacts over regular operators, slightly softer results on average.
+// [ -4,-13,-13 ]	[ 13,  4, -4 ]	[ -4,  4, 13 ]	[-13,-13, -4 ]
+// [  4,  0, -4 ]	[ 13,  0,-13 ]	[-13,  0, 13 ]	[ -4,  0,  4 ]
+// [ 13, 13,  4 ]	[  4, -4,-13 ]	[-13, -4,  4 ]	[  4, 13, 13 ]
+float4 EdgeTierData = { 4, 13, 0.21, 0.34 };
+#endif
+
+#if EdgeDetector == 22 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; where the smaller value is divided across two pixels.
+// [ -72,-233, -72 ]	[  72,  0, -72 ]	[   0, 72, 233 ]	[-233, -72,   0 ]
+// [   0,   0,   0 ]	[ 233,  0,-233 ]	[ -72,  0,  72 ]	[ -72,   0,  72 ]
+// [  72, 233,  72 ]	[  72,  0, -72 ]	[-233,-72,   0 ]	[   0,  72, 233 ]
+// Semi-Diagonals // Meant to reduce amplification of aliasing and interlacing artefacts over regular operators, slightly softer results on average.
+// [ -72,-233,-233 ]	[ 233, 72, -72 ]	[ -72, 72, 233 ]	[-233,-233, -72 ]
+// [  72,   0, -72 ]	[ 233,  0,-233 ]	[-233,  0, 233 ]	[ -72,   0,  72 ]
+// [ 233, 233,  72 ]	[  72,-72,-233 ]	[-233,-72,  72 ]	[  72, 233, 233 ]
+float4 EdgeTierData = { 72, 233, 3.77, 6.10 };
+#endif
+
+#if EdgeDetector == 23 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; where both values are divided across two pixels.
+float4 EdgeTierData = { 72, 116.5, 2.605, 3.77 };
+#endif
+
+#if EdgeDetector == 24 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; hybrid combo with different behavior for regular and semi-diagonal operators.
+float4 EdgeTierData = { 72, 233, 3.77, 5.21 };
+#endif
+// Special exception for Experimentation purposes. Will eventually get either moved or deleted depending on the results.
+#if SemiDiagonalOperators == 1  && EdgeDetector == 24
+EdgeTierData[0] *= 2;
+#endif
+
+#if EdgeDetector == 25 // Experimental; Phi, cut off before zeros and rounded up at convenient clusters of high digits;
+// even more precision should be achievable just by adding more digits, but at some point the performance trade-off just isn't worth it; not quite sure how to test that, so i'll just leave this here as an option for anyone who likes to experiment and run benchmarks.
+float EdgeTier1 = 1.61803398875; float EdgeTier2 = 0.5; // Produces ugly and inconsistent output, find out why.
+//1.618
+//1.61803398875
+//1.618033988749895
+//1.6180339887498948482
+//1.61803398874989484820458683436563811772
+//1.6180339887498948482045868343656381177203
+//1.61803398874989484820458683436563811772030918
+//1.6180339887498948482045868343656381177203091798
+//1.6180339887498948482045868343656381177203091798057628621354486227
+//1.61803398874989484820458683436563811772030917980576286213544862270526
+//1.61803398874989484820458683436563811772030917980576286213544862270526046282
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072
+//1.61803398874989484820458683436563811772030917980576286213544862270526046281890244970720720419
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911375
+// Actual Phi to 101 digits after the decimal point // 1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374
+#endif
+
+#if SemiDiagonalOperators == 0
+float4 Edge1 = ((c05*EdgeTierData[1]+(c04+c06)*EdgeTierData[0])-(c01*EdgeTierData[1]+(c08+c02)*EdgeTierData[0]))/EdgeTierData[2];
+float4 Edge2 = ((c07*EdgeTierData[1]+(c06+c08)*EdgeTierData[0])-(c03*EdgeTierData[1]+(c02+c04)*EdgeTierData[0]))/EdgeTierData[2];
+float4 Edge3 = ((c02*EdgeTierData[1]+(c01+c03)*EdgeTierData[0])-(c06*EdgeTierData[1]+(c05+c07)*EdgeTierData[0]))/EdgeTierData[2];
+float4 Edge4 = ((c04*EdgeTierData[1]+(c03+c05)*EdgeTierData[0])-(c08*EdgeTierData[1]+(c07+c01)*EdgeTierData[0]))/EdgeTierData[2];
+#endif
+
+#if SemiDiagonalOperators == 1 
+float4 Edge1 = (((c05+c06)*EdgeTierData[1]+(c04+c07)*EdgeTierData[0])-((c01+c02)*EdgeTierData[1]+(c08+c03)*EdgeTierData[0]))/EdgeTierData[3];
+float4 Edge2 = (((c07+c08)*EdgeTierData[1]+(c06+c01)*EdgeTierData[0])-((c03+c04)*EdgeTierData[1]+(c02+c05)*EdgeTierData[0]))/EdgeTierData[3];
+float4 Edge3 = (((c02+c03)*EdgeTierData[1]+(c01+c04)*EdgeTierData[0])-((c06+c07)*EdgeTierData[1]+(c05+c08)*EdgeTierData[0]))/EdgeTierData[3];
+float4 Edge4 = (((c04+c05)*EdgeTierData[1]+(c03+c06)*EdgeTierData[0])-((c08+c01)*EdgeTierData[1]+(c07+c02)*EdgeTierData[0]))/EdgeTierData[3];
+#endif
+
+// -- Do The Maths --
+//abs always returns a positive value
+//dot multiplies each array component separately and then adds the components together
+//mul does matrix multiplication, looks messy and impractical for pixel color math
+//saturate() clips input to 0-1 range.
+//pow(input, Phi)
+
+//DetectEdges = 1-saturate((abs(Edge1)+abs(Edge2)+abs(Edge3)+abs(Edge4))/400);
+//
+#if   EdgeMathMode == 0	// My Best experimental approach this far:
+float	DetectEdges = saturate((abs(Edge1)+abs(Edge2)+abs(Edge3)+abs(Edge4))/4);
+//DetectEdges = saturate((abs(Edge1)+abs(Edge2)+abs(Edge3)+abs(Edge4))/4);
+//float	DetectEdges = saturate(dot(dot( abs(Edge1),abs(Edge2) ),dot( abs(Edge3),abs(Edge4) ))/4);//2?
+//		DetectEdges = 1-DetectEdges;
+//float	TextureEnhancement = saturate((abs(Edge1)+abs(Edge2)+abs(Edge3)+abs(Edge4))/4);
+
+#elif EdgeMathMode == 1	// Kirsch-like max approach:
+float	DetectEdges = saturate(max(max(Edge1,Edge2),max(Edge3,Edge4)));
+
+#elif EdgeMathMode == 2	// placeholder for theoretically sound approaches:
+
+#elif EdgeMathMode == 3	// Recommended approach:
+float	DetectEdges = saturate(dot( dot( abs(Edge1),abs(Edge2) ),dot( abs(Edge3),abs(Edge4) ) )/4);
+
+#elif EdgeMathMode == 4	// SharpenComplex aproach:
+float	DetectEdges = saturate(sqrt(mul(Edge1,Edge1)+mul(Edge2,Edge2)+mul(Edge3,Edge3)+mul(Edge4,Edge4)));
+
+#else 					// Experimental/Diagnostic aproaches:
+//float	DetectEdges = sqrt(Edge1+Edge2+Edge3+Edge4/4);
+//float	DetectEdges = abs(Edge1+Edge2+Edge3+Edge4)/4;
+//float	DetectEdges = sqrt(dot(Edge1,Edge2)+dot(Edge3,Edge4))/4;
+//float	DetectEdges = abs(dot(Edge1,Edge2)+dot(Edge3,Edge4))/4;
+//float	DetectEdges = saturate((Edge1+Edge2+Edge3+Edge4)/4);
+//float	DetectEdges = abs(dot(abs(Edge1),abs(Edge2))+dot(abs(Edge3),abs(Edge4)))/4;
+float	DetectEdges = dot(dot( abs(Edge1),abs(Edge2) ),dot( abs(Edge3),abs(Edge4) ))/4;
+//float	DetectEdges = saturate(sqrt(dot( dot(Edge1,Edge2),dot(Edge3,Edge4) ))/4);
+//float	DetectEdges = saturate(sqrt( mul(Edge1,Edge2)+mul(Edge3,Edge4) ));
+#endif
+
+float4 Sharpening = (Blur-c00);
+
+#if	  BarEdgeLinePrevention > 0
+int	BarsDetected  = 0;
+#endif
+
+#if BarEdgeLinePrevention == 1 // Recommended for clean sources. (Least aggressive)
+float BarH1  = dot(c22.rgb+c08.rgb+c01.rgb+c02.rgb+c12.rgb,c20.rgb+c06.rgb+c05.rgb+c04.rgb+c14.rgb);
+float BarV1  = dot(c10.rgb+c02.rgb+c03.rgb+c04.rgb+c16.rgb,c24.rgb+c08.rgb+c07.rgb+c06.rgb+c18.rgb);
+	  BarH1 += dot(c23.rgb+c24.rgb+c09.rgb+c10.rgb+c11.rgb,c19.rgb+c18.rgb+c17.rgb+c16.rgb+c15.rgb);
+	  BarV1 += dot(c23.rgb+c22.rgb+c21.rgb+c20.rgb+c19.rgb,c11.rgb+c12.rgb+c13.rgb+c14.rgb+c15.rgb);
+	if (BarH1<=BarThreshold || BarV1<=BarThreshold) {BarsDetected += 1;}
+#elif BarEdgeLinePrevention == 2 // Can also reduce amplification of some interlacing artefacts. (More aggressive)
+float BarH1 = dot(c22.rgb+c08.rgb+c01.rgb+c02.rgb+c12.rgb,c20.rgb+c06.rgb+c05.rgb+c04.rgb+c14.rgb);
+float BarV1 = dot(c10.rgb+c02.rgb+c03.rgb+c04.rgb+c16.rgb,c24.rgb+c08.rgb+c07.rgb+c06.rgb+c18.rgb);
+	if (BarH1<=BarThreshold || BarV1<=BarThreshold) {BarsDetected += 1;}
+#elif BarEdgeLinePrevention == 3 // Recommended for compressed and noisy sources. (Very Aggressive)
+float BarH1 = dot(c22.rgb+c08.rgb+c01.rgb+c02.rgb+c12.rgb,c20.rgb+c06.rgb+c05.rgb+c04.rgb+c14.rgb);
+float BarV1 = dot(c10.rgb+c02.rgb+c03.rgb+c04.rgb+c16.rgb,c24.rgb+c08.rgb+c07.rgb+c06.rgb+c18.rgb);
+float BarH2 = dot(c23.rgb+c24.rgb+c09.rgb+c10.rgb+c11.rgb,c19.rgb+c18.rgb+c17.rgb+c16.rgb+c15.rgb);
+float BarV2 = dot(c23.rgb+c22.rgb+c21.rgb+c20.rgb+c19.rgb,c11.rgb+c12.rgb+c13.rgb+c14.rgb+c15.rgb);
+	if (BarH1<=BarThreshold || BarV1<=BarThreshold || BarH2<=BarThreshold || BarV2<=BarThreshold) {BarsDetected += 1;} // Appears to add one for each match.
+#elif BarEdgeLinePrevention == 4 // Recommended for heavily compressed and very noisy sources. (Most Aggressive)
+float BarH1 = dot(c44.rgb+c22.rgb+c08.rgb+c01.rgb+c02.rgb+c12.rgb+c30.rgb,c42.rgb+c20.rgb+c06.rgb+c05.rgb+c04.rgb+c14.rgb+c32.rgb);
+float BarV1 = dot(c26.rgb+c10.rgb+c02.rgb+c03.rgb+c04.rgb+c16.rgb+c36.rgb,c48.rgb+c24.rgb+c08.rgb+c07.rgb+c06.rgb+c18.rgb+c38.rgb);
+float BarH2 = dot(c45.rgb+c23.rgb+c24.rgb+c09.rgb+c10.rgb+c11.rgb+c29.rgb,c41.rgb+c19.rgb+c18.rgb+c17.rgb+c16.rgb+c15.rgb+c33.rgb);
+float BarV2 = dot(c47.rgb+c23.rgb+c22.rgb+c21.rgb+c20.rgb+c19.rgb+c39.rgb,c27.rgb+c11.rgb+c12.rgb+c13.rgb+c14.rgb+c15.rgb+c35.rgb);
+float BarH3 = dot(c46.rgb+c47.rgb+c48.rgb+c25.rgb+c26.rgb+c27.rgb+c28.rgb,c34.rgb+c35.rgb+c36.rgb+c37.rgb+c38.rgb+c39.rgb+c40.rgb);
+float BarV3 = dot(c40.rgb+c41.rgb+c42.rgb+c43.rgb+c44.rgb+c45.rgb+c46.rgb,c28.rgb+c29.rgb+c30.rgb+c31.rgb+c32.rgb+c33.rgb+c34.rgb);
+	if (BarH1<=BarThreshold || BarV1<=BarThreshold || BarH2<=BarThreshold || BarV2<=BarThreshold || BarH3<=BarThreshold || BarV3<=BarThreshold) {BarsDetected += 1;} // Appears to add one for each match.
+#elif BarEdgeLinePrevention == 5 //
+if (dot(c22.rgb+c08.rgb+c01.rgb+c02.rgb+c12.rgb,c20.rgb+c06.rgb+c05.rgb+c04.rgb+c14.rgb) <= BarThreshold ) {BarsDetected += 1;}
+if (dot(c23.rgb+c24.rgb+c09.rgb+c10.rgb+c11.rgb,c19.rgb+c18.rgb+c17.rgb+c16.rgb+c15.rgb) <= BarThreshold ) {BarsDetected += 1;}
+
+//	[c46,c47,c48,c25,c26,c27,c28] c25 c31 c37 c43
+//	[c45,c23,c24,c09,c10,c11,c29] c26 c30 c32 c36 c38 c42 c44 c48
+//	[c44,c22,c08,c01,c02,c12,c30] c27 c29 c33 c35 c39 c41 c45 c47
+//	[c43,c21,c07,c00,c03,c13,c31] c28 c34 c40 c46
+//	[c42,c20,c06,c05,c04,c14,c32]
+//	[c41,c19,c18,c17,c16,c15,c33]
+//	[c40,c39,c38,c37,c36,c35,c34]
+#endif
+
+
+#if	  BarEdgeLinePrevention > 0
+Sharpening /= (BarsDetected*255)+1;
+#endif
+
+// To reduce color artefacts, try using dot-product based EdgeMath for edges, but averaging for textures.
+
+float4 EdgeSharpeningMath;
+#if DynamicSharpening == 2 || DynamicSharpening == 3
+EdgeSharpeningMath.rgb = c00-Sharpening*DetectEdges*EdgeSharpenFactor;
+#else
+EdgeSharpeningMath.rgb = c00-Sharpening*EdgeSharpenFactor;
+#endif
+
+float4 TextureSharpeningMath;
+#if DynamicSharpening == 1 || DynamicSharpening == 3
+TextureSharpeningMath.rgb = c00-Sharpening*DetectEdges*TextureSharpenFactor;
+#else
+TextureSharpeningMath.rgb = c00-Sharpening*TextureSharpenFactor;
+#endif
+
+//if (dot(c01, float4(0.299, 0.587, 0.114, 0)) < .067){if(dot(c08, float4(0.299, 0.587, 0.114, 0)) < .067 ){if(dot(c02, float4(0.299, 0.587, 0.114, 0)) < .5005) EdgeSharpeningMath = c00;}}
+//if (dot(c05, float4(0.299, 0.587, 0.114, 0)) < .067){if(dot(c04, float4(0.299, 0.587, 0.114, 0)) < .067 ){if(dot(c06, float4(0.299, 0.587, 0.114, 0)) < .5005) EdgeSharpeningMath = c00;}}
+//if (dot(c01, float4(0.299, 0.587, 0.114, 0)) < .067 && dot(c08, float4(0.299, 0.587, 0.114, 0)) < .067 && dot(c02, float4(0.299, 0.587, 0.114, 0)) < .5005) {EdgeSharpeningMath = c00;}
+//if (dot(c05, float4(0.299, 0.587, 0.114, 0)) < .067 && dot(c04, float4(0.299, 0.587, 0.114, 0)) < .067 && dot(c06, float4(0.299, 0.587, 0.114, 0)) < .5005) {EdgeSharpeningMath = c00;}
+//if (dot(c01.rgb, c05.rgb) < .5 && dot(c08.rgb, c04.rgb) < .5 && dot(c02.rgb, c06.rgb) < .5) {EdgeSharpeningMath = c00;}
+//if (dot(c08.rgb+c01.rgb+c02.rgb,c04.rgb+c05.rgb+c06.rgb) < 4) {EdgeSharpeningMath = c00;}
+
+	 if (DetectEdges>HighThreshold)
+		{EdgeSharpeningMath.a = 1; return EdgeSharpeningMath;}
+else if (DetectEdges>LowThreshold)
+		{TextureSharpeningMath.a = 1; return TextureSharpeningMath;}
+	 else{DetectEdges = 1; return c00;}
+}
+
+//	 if (DetectEdges>dot(HighThreshold,HighThreshold))
+//else{if (DetectEdges>dot(LowThreshold,LowThreshold))
+//	 if (DetectEdges>mul(HighThreshold,HighThreshold))
+//else{if (DetectEdges>mul(LowThreshold,LowThreshold))

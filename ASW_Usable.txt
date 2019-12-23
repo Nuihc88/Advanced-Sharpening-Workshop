@@ -1,0 +1,267 @@
+// Advanced (Un)Sharpen Workshop - Usable Edition=ps_3_0
+// Branch Codename: PhiSharpen - Pre-Alpha 1
+// Code By Nuihc88
+	sampler s0 :	register(s0);
+	float4 p0 :		register(c0);
+	#define px		(1./p0[0])
+	#define py		(1./p0[1])
+
+// -- Settings --
+
+		// Strength of Edge Sharpening. Also meant to take negative values for blurring, but this is broken; non-deterministic behavour; need to redo the maths.
+#define EdgeSharpenFactor 1.618		//2.618//4.236//6.854102 Optimal range: (0.4) - (2.4) 1 - 3
+		// Strength of Texture Sharpening. Also meant to take negative values for blurring, but this is broken; non-deterministic behavour; need to redo the maths.
+#define TextureSharpenFactor 3.236		// Optimal range: (1.6) - (3.2) 2 - 6
+		// Where Texture ends and Edge starts.
+#define HighThreshold 0.666//(2/3)			// Optimal range: ?
+		// Where gradient protection ends and Texture starts.
+#define LowThreshold 0.333//(1/3)			// Optimal range: ?
+
+		// Select which Edge Detection Operator to use.
+#define EdgeDetector 22
+		// Choose whether to use Semi-Diagonal or Regular Edge Detection Operators.
+#define SemiDiagonalOperators 1 // 0=Off 1=On
+		// Select which edge detection math to use.
+#define EdgeMathMode 0
+
+		// BarEdgeLine Prevention for incorrectly cropped material. 1-3 Least to Most aggressive, 0 disables.
+#define BarEdgeLinePrevention 3
+		// Select which Blur Kernel to use for Unsharp Masking.
+#define BlurMaskKernel 0
+
+		// Removes original pixel's Blur influence, with DynamicSharpening it produces a light spatial smoothing effect similar to UnDot; makes things look more reflective and suppresses some mosquito noise at no performance cost. ???doublecheck???
+#define MaskSmooth 1				// 0=Off, 1 = On
+
+		// Makes sharpening strength proportional to the probability that an Edge has been detected. Reduces Sharpening Strength Factors.
+#define DynamicSharpening 2 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
+
+
+// -- Main Code --
+//	[c23,c24,c09,c10,c11]
+//	[c22,c08,c01,c02,c12]
+//	[c21,c07,c00,c03,c13]
+//	[c20,c06,c05,c04,c14]
+//	[c19,c18,c17,c16,c15]
+float4 main(float2 tex : TEXCOORD0) : COLOR {	float4 c00 = tex2D(s0, tex);
+float4 c01 = tex2D(s0, tex + float2(0,-py));	float4 c02 = tex2D(s0, tex + float2(px,-py));
+float4 c03 = tex2D(s0, tex + float2(px,0));		float4 c04 = tex2D(s0, tex + float2(px,py));
+float4 c05 = tex2D(s0, tex + float2(0,py));		float4 c06 = tex2D(s0, tex + float2(-px,py));
+float4 c07 = tex2D(s0, tex + float2(-px,0));	float4 c08 = tex2D(s0, tex + float2(-px,-py));
+float4 c09 = tex2D(s0, tex + float2(0,-py*2));	float4 c10 = tex2D(s0, tex + float2( px,-py*2));
+float4 c11 = tex2D(s0, tex + float2(px,-py)*2);	float4 c12 = tex2D(s0, tex + float2( px*2,-py));
+float4 c13 = tex2D(s0, tex + float2(px*2,0));	float4 c14 = tex2D(s0, tex + float2( px*2,py));
+float4 c15 = tex2D(s0, tex + float2(px,py)*2);	float4 c16 = tex2D(s0, tex + float2(-px,py*2));
+float4 c17 = tex2D(s0, tex + float2(0,py*2));	float4 c18 = tex2D(s0, tex + float2(-px,py*2));
+float4 c19 = tex2D(s0, tex + float2(-px,py)*2);	float4 c20 = tex2D(s0, tex + float2(-px*2,py));
+float4 c21 = tex2D(s0, tex + float2(-px*2,0));	float4 c22 = tex2D(s0, tex + float2(-px*2,-py));
+float4 c23 = tex2D(s0, tex + float2(-px,-py)*2);float4 c24 = tex2D(s0, tex + float2(-px,-py*2));
+
+// -- Blur Mask Kernel --
+
+#if BlurMaskKernel == 0 // 5x5 Fibonacci Kernel - An approcimation of the Golden Ratio, gives excellent balance between smoothness and sharpness.
+float BlurTier1 = 8;	//	[1 , 2 , 3 , 2 , 1]
+float BlurTier2 = 5;	//	[2 , 5 , 8 , 5 , 2]
+float BlurTier3 = 3;	//	[3 , 8 ,13 , 8 , 3]
+float BlurTier4 = 2;	//	[2 , 5 , 8 , 5 , 2]
+float BlurTier5 = 1;	//	[1 , 2 , 3 , 2 , 1]
+float4	Mask  = BlurTier1*(c01+c03+c05+c07);
+		Mask += BlurTier2*(c02+c04+c06+c08);
+		Mask += BlurTier3*(c09+c13+c17+c21);
+		Mask += BlurTier4*(c10+c12+c14+c16+c18+c20+c22+c24);
+		Mask += BlurTier5*(c11+c15+c19+c23);
+#endif
+#if BlurMaskKernel == 0 && MaskSmooth == 1
+float4	Blur  = Mask/84;
+#elif BlurMaskKernel == 0 && MaskSmooth == 0
+float BlurTier0 = 13; Mask += BlurTier0*c00; float4	Blur  = Mask/97;
+#endif
+
+#if BlurMaskKernel == 1 // 5x5 Gradient Kernel - Very Smooth and reflective. Based on an earlier 8(+1) texture fetch approach inspired by LumaSharpen, but which was abandoned as it would have little to no performance benefit when used together with Edge Detection and/or Plain Detection...
+float BlurTier1 = 6;	//	[1 , 2 , 3 , 2 , 1]	//	[1/9,2/9,1/3,2/9,1/9]
+float BlurTier2 = 4;	//	[2 , 4 , 6 , 4 , 2]	//	[2/9,4/9,2/3,4/9,2/9]
+float BlurTier3 = 3;	//	[3 , 6 , 9 , 6 , 3]	//	[1/3,2/3, 1 ,2/3,1/3]
+float BlurTier4 = 2;	//	[2 , 4 , 6 , 4 , 2]	//	[2/9,4/9,2/3,4/9,2/9]
+float BlurTier5 = 1;	//	[1 , 2 , 3 , 2 , 1]	//	[1/9,2/9,1/3,2/9,1/9]
+float4	Mask  = BlurTier1*(c01+c03+c05+c07);
+		Mask += BlurTier2*(c02+c04+c06+c08);
+		Mask += BlurTier3*(c09+c13+c17+c21);
+		Mask += BlurTier4*(c10+c12+c14+c16+c18+c20+c22+c24);
+		Mask += BlurTier5*(c11+c15+c19+c23);
+#endif
+#if BlurMaskKernel == 1 && MaskSmooth == 1
+float4	Blur  = Mask/72;
+#elif BlurMaskKernel == 1 && MaskSmooth == 0
+float BlurTier0 = 9; Mask += BlurTier0*c00; float4	Blur  = Mask/81;
+#endif
+
+#if BlurMaskKernel == 3 // 5x5 Test - An experiment to reduce the instruction count; seems to work, but is performance affected? Requires further testing.
+int2x3 BlurTiers = { 1, 2, 3, 5, 8, 13 }; 		// 	[1 , 2 , 3 , 2 , 1]
+float4	Blur  = BlurTiers._22*(c01+c03+c05+c07);//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers._21*(c02+c04+c06+c08);//	[3 , 8 ,13 , 8 , 3]
+		Blur += BlurTiers._13*(c09+c13+c17+c21);//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers._11*(c11+c15+c19+c23);//	[1 , 2 , 3 , 2 , 1]
+		Blur += BlurTiers._12*(c10+c12+c14+c16+c18+c20+c22+c24);
+#endif
+#if BlurMaskKernel == 3 && MaskSmooth == 1
+	Blur  /= 84;
+#elif BlurMaskKernel == 3 && MaskSmooth == 0
+	Blur += BlurTiers._23*c00;	Blur  /= 97;
+#endif
+
+#if BlurMaskKernel == 4 // 5x5 Test - An experiment to reduce the instruction count; seems to work, but is performance affected? Requires further testing.
+int3 BlurTiers[2] = { 1, 2, 3, 5, 8, 13 }; 			// 	[1 , 2 , 3 , 2 , 1]
+float4	Blur  = BlurTiers[1][1]*(c01+c03+c05+c07);	//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers[1][0]*(c02+c04+c06+c08);	//	[3 , 8 ,13 , 8 , 3]
+		Blur += BlurTiers[0][2]*(c09+c13+c17+c21);	//	[2 , 5 , 8 , 5 , 2]
+		Blur += BlurTiers[0][0]*(c11+c15+c19+c23);	//	[1 , 2 , 3 , 2 , 1]
+		Blur += BlurTiers[0][1]*(c10+c12+c14+c16+c18+c20+c22+c24);
+#endif
+#if BlurMaskKernel == 4 && MaskSmooth == 1
+	Blur  /= 84;
+#elif BlurMaskKernel == 4 && MaskSmooth == 0
+	Blur += BlurTiers[1][2]*c00;	Blur  /= 97;
+#endif
+
+// -- Edge Detection Operator --
+
+#if EdgeDetector == 2 // Scharr-Operators -  Excellent for Anime, CGI & Live content alike.
+// [ -3,-10,-3 ]	[  3,  0, -3 ]	[  0,  3, 10 ]	[-10, -3,  0 ]
+// [  0,  0, 0 ]	[ 10,  0,-10 ]	[ -3,  0,  3 ]	[ -3,  0,  3 ]
+// [  3, 10, 3 ]	[  3,  0, -3 ]	[-10, -3,  0 ]	[  0,  3, 10 ]
+// Semi-Diagonals // Meant to reduce amplification of aliasing and interlacing artefacts over regular operators, slightly softer results on average.
+// [ -3,-10,-10 ]	[ 10,  3, -3 ]	[ -3,  3, 10]	[-10,-10, -3 ]
+// [  3,  0, -3 ]	[ 10,  0,-10 ]	[-10,  0, 10 ]	[ -3,  0,  3 ]
+// [ 10, 10,  3 ]	[  3, -3,-10 ]	[-10, -3,  3 ]	[  3, 10, 10 ]
+float4 EdgeTierData = { 3, 10, 0.16, 0.26 };
+#endif
+
+#if EdgeDetector == 21 // Low-Precision GoldenRatio-Operators -   After i realized that 10:(3*2) of Scharr is pretty close to the golden ratio, i started trying out other approximations of it, these give very pleasing results.
+// Experimental ( 1.625:1 ) approcimation of Phi; where the smaller value is divided across two pixels.
+// [ -4,-13,-4 ]	[  4,  0, -4 ]	[  0,  4, 13 ]	[-13, -4,  0 ]
+// [  0,  0, 0 ]	[ 13,  0,-13 ]	[ -4,  0,  4 ]	[ -4,  0,  4 ]
+// [  4, 13, 4 ]	[  4,  0, -4 ]	[-13, -4,  0 ]	[  0,  4, 13 ]
+// Semi-Diagonals // Meant to reduce amplification of aliasing and interlacing artefacts over regular operators, slightly softer results on average.
+// [ -4,-13,-13 ]	[ 13,  4, -4 ]	[ -4,  4, 13 ]	[-13,-13, -4 ]
+// [  4,  0, -4 ]	[ 13,  0,-13 ]	[-13,  0, 13 ]	[ -4,  0,  4 ]
+// [ 13, 13,  4 ]	[  4, -4,-13 ]	[-13, -4,  4 ]	[  4, 13, 13 ]
+float4 EdgeTierData = { 4, 13, 0.21, 0.34 };
+#endif
+
+#if EdgeDetector == 22 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; where the smaller value is divided across two pixels.
+// [ -72,-233, -72 ]	[  72,  0, -72 ]	[   0, 72, 233 ]	[-233, -72,   0 ]
+// [   0,   0,   0 ]	[ 233,  0,-233 ]	[ -72,  0,  72 ]	[ -72,   0,  72 ]
+// [  72, 233,  72 ]	[  72,  0, -72 ]	[-233,-72,   0 ]	[   0,  72, 233 ]
+// Semi-Diagonals // Meant to reduce amplification of aliasing and interlacing artefacts over regular operators, slightly softer results on average.
+// [ -72,-233,-233 ]	[ 233, 72, -72 ]	[ -72, 72, 233 ]	[-233,-233, -72 ]
+// [  72,   0, -72 ]	[ 233,  0,-233 ]	[-233,  0, 233 ]	[ -72,   0,  72 ]
+// [ 233, 233,  72 ]	[  72,-72,-233 ]	[-233,-72,  72 ]	[  72, 233, 233 ]
+float4 EdgeTierData = { 72, 233, 3.77, 6.10 };
+#endif
+
+#if EdgeDetector == 23 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; where both values are divided across two pixels.
+float4 EdgeTierData = { 72, 116.5, 2.605, 3.77 };
+#endif
+
+#if EdgeDetector == 233 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; where both values are divided across two pixels.
+float4 EdgeTierData = { 144, 233, 5.21, 7.54 };
+#endif
+
+#if EdgeDetector == 24 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; hybrid combo with different behavior for regular and semi-diagonal operators.
+float4 EdgeTierData = { 72, 233, 3.77, 5.21 };
+#endif
+// Special exception for Experimentation purposes. Will eventually get either moved or deleted depending on the results.
+#if SemiDiagonalOperators == 1  && EdgeDetector == 24
+EdgeTierData[0] *= 2;
+#endif
+
+#if EdgeDetector == 25 // Experimental; Phi, cut off before zeros and rounded up at convenient clusters of high digits;
+// even more precision should be achievable just by adding more digits, but at some point the performance trade-off just isn't worth it; not quite sure how to test that, so i'll just leave this here as an option for anyone who likes to experiment and run benchmarks.
+float EdgeTier1 = 1.61803398875; float EdgeTier2 = 0.5; // Produces ugly and inconsistent output, find out why.
+//1.618
+//1.61803398875
+//1.618033988749895
+//1.6180339887498948482
+//1.61803398874989484820458683436563811772
+//1.6180339887498948482045868343656381177203
+//1.61803398874989484820458683436563811772030918
+//1.6180339887498948482045868343656381177203091798
+//1.6180339887498948482045868343656381177203091798057628621354486227
+//1.61803398874989484820458683436563811772030917980576286213544862270526
+//1.61803398874989484820458683436563811772030917980576286213544862270526046282
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072
+//1.61803398874989484820458683436563811772030917980576286213544862270526046281890244970720720419
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911375
+//1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374
+#endif
+
+#if SemiDiagonalOperators == 0
+float4 Edge1 = ((c05*EdgeTierData[1]+(c04+c06)*EdgeTierData[0])-(c01*EdgeTierData[1]+(c08+c02)*EdgeTierData[0]))/EdgeTierData[2];
+float4 Edge2 = ((c07*EdgeTierData[1]+(c06+c08)*EdgeTierData[0])-(c03*EdgeTierData[1]+(c02+c04)*EdgeTierData[0]))/EdgeTierData[2];
+float4 Edge3 = ((c02*EdgeTierData[1]+(c01+c03)*EdgeTierData[0])-(c06*EdgeTierData[1]+(c05+c07)*EdgeTierData[0]))/EdgeTierData[2];
+float4 Edge4 = ((c04*EdgeTierData[1]+(c03+c05)*EdgeTierData[0])-(c08*EdgeTierData[1]+(c07+c01)*EdgeTierData[0]))/EdgeTierData[2];
+#endif
+
+#if SemiDiagonalOperators == 1 
+float4 Edge1 = (((c05+c06)*EdgeTierData[1]+(c04+c07)*EdgeTierData[0])-((c01+c02)*EdgeTierData[1]+(c08+c03)*EdgeTierData[0]))/EdgeTierData[3];
+float4 Edge2 = (((c07+c08)*EdgeTierData[1]+(c06+c01)*EdgeTierData[0])-((c03+c04)*EdgeTierData[1]+(c02+c05)*EdgeTierData[0]))/EdgeTierData[3];
+float4 Edge3 = (((c02+c03)*EdgeTierData[1]+(c01+c04)*EdgeTierData[0])-((c06+c07)*EdgeTierData[1]+(c05+c08)*EdgeTierData[0]))/EdgeTierData[3];
+float4 Edge4 = (((c04+c05)*EdgeTierData[1]+(c03+c06)*EdgeTierData[0])-((c08+c01)*EdgeTierData[1]+(c07+c02)*EdgeTierData[0]))/EdgeTierData[3];
+#endif
+
+// -- Do The Maths --
+
+#if   EdgeMathMode == 0	// My Best experimental approach this far:
+float	DetectEdges = saturate((abs(Edge1)+abs(Edge2)+abs(Edge3)+abs(Edge4))/4);
+
+#elif EdgeMathMode == 1	// Kirsch-like max approach:
+float	DetectEdges = saturate(max(max(Edge1,Edge2),max(Edge3,Edge4)));
+
+#elif EdgeMathMode == 2	// placeholder for theoretically sound approaches:
+float	DetectEdges = saturate(sqrt(dot( dot( abs(Edge1),abs(Edge2) ),dot( abs(Edge3),abs(Edge4) ) )));// with or without abs?
+
+#elif EdgeMathMode == 3	// Recommended approach:
+float	DetectEdges = saturate(dot( dot( abs(Edge1),abs(Edge2) ),dot( abs(Edge3),abs(Edge4) ) )/4);
+
+#elif EdgeMathMode == 4	// SharpenComplex aproach:
+float	DetectEdges = saturate(sqrt(mul(Edge1,Edge1)+mul(Edge2,Edge2)+mul(Edge3,Edge3)+mul(Edge4,Edge4)));
+
+#else 					// Experimental/Diagnostic aproaches:
+//float	DetectEdges = sqrt(Edge1+Edge2+Edge3+Edge4/4);
+//float	DetectEdges = abs(Edge1+Edge2+Edge3+Edge4)/4;
+//float	DetectEdges = sqrt(dot(Edge1,Edge2)+dot(Edge3,Edge4))/4;
+//float	DetectEdges = abs(dot(Edge1,Edge2)+dot(Edge3,Edge4))/4;
+//float	DetectEdges = saturate((Edge1+Edge2+Edge3+Edge4)/4);
+//float	DetectEdges = abs(dot(abs(Edge1),abs(Edge2))+dot(abs(Edge3),abs(Edge4)))/4;
+float	DetectEdges = dot(dot( abs(Edge1),abs(Edge2) ),dot( abs(Edge3),abs(Edge4) ))/4;
+//float	DetectEdges = saturate(sqrt(dot( dot(Edge1,Edge2),dot(Edge3,Edge4) ))/4);
+//float	DetectEdges = saturate(sqrt( mul(Edge1,Edge2)+mul(Edge3,Edge4) ));
+#endif
+// Test
+float	EdgeSum = DetectEdges;
+float4 EdgeSharpeningMath;
+#if DynamicSharpening == 2 || DynamicSharpening == 3
+EdgeSharpeningMath.rgb = c00-(Blur-c00)*EdgeSum*EdgeSharpenFactor;
+#else
+EdgeSharpeningMath.rgb = c00-(Blur-c00)*EdgeSharpenFactor;
+#endif
+
+float4 TextureSharpeningMath;
+#if DynamicSharpening == 1 || DynamicSharpening == 3
+TextureSharpeningMath.rgb = c00-(Blur-c00)*EdgeSum*TextureSharpenFactor;
+#else
+TextureSharpeningMath.rgb = c00-(Blur-c00)*TextureSharpenFactor;
+#endif
+
+	 if (DetectEdges>HighThreshold)
+		{EdgeSharpeningMath.a = 1; return EdgeSharpeningMath;}
+else if (DetectEdges>LowThreshold)
+		{TextureSharpeningMath.a = 1; return TextureSharpeningMath;}
+	 else{c00.a = 1; return c00;}
+}
