@@ -1,2 +1,2 @@
 # Advanced-Sharpening-Workshop
-Goal Is Complex and adaptive realtime image-processing using Pixel Shaders
+Goal of this project is advanced and adaptive realtime image-processing using well optimized Pixel Shaders.
