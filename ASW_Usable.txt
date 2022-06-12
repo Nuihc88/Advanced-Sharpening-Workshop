@@ -30,6 +30,7 @@
 
 		// BarEdgeLine Prevention for incorrectly cropped material. 1-3 Least to Most aggressive, 0 disables.
 #define BarEdgeLinePrevention 3
+// If edge is detected, recalculate EdgeStrength
 		// Select which Blur Kernel to use for Unsharp Masking.
 #define BlurMaskKernel 4
 
@@ -40,7 +41,11 @@
 #define DynamicSharpening 3 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
 
 		// Makes sharpening strength inversely proportional to the probability that an Edge has been detected. Inverts Dynamic Sharpening to avoid oversharpening of Textures or Edges.
-#define ReciprocalDynamicS 0 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
+#define ReciprocalDynamicS 2 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
+
+#define AntiHaloMode 3 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
+
+//#define test 1
 
 // -- Main Code --
 //	[c23,c24,c09,c10,c11]
@@ -70,8 +75,6 @@ float4 c19 = tex2D(s0, tex + float2(-px,py)*2);	float4 c20 = tex2D(s0, tex + flo
 float4 c21 = tex2D(s0, tex + float2(-px*2,0));	float4 c22 = tex2D(s0, tex + float2(-px*2,-py));
 float4 c23 = tex2D(s0, tex + float2(-px,-py)*2);float4 c24 = tex2D(s0, tex + float2(-px,-py*2));
 
-#if test == 1 //texture fetches arranged by distance. For cleaner looking code.
-
 float4 c25 = tex2D(s0, tex + float2(0,-py*3));		float4 c26 = tex2D(s0, tex + float2(px,-py*3));
 float4 c27 = tex2D(s0, tex + float2(px*2,-py*3));	float4 c28 = tex2D(s0, tex + float2(px,-py)*3);
 float4 c29 = tex2D(s0, tex + float2(px*3,-py*2));	float4 c30 = tex2D(s0, tex + float2(px*3,-py));
@@ -84,6 +87,10 @@ float4 c41 = tex2D(s0, tex + float2(-px*3,py*2));	float4 c42 = tex2D(s0, tex + f
 float4 c43 = tex2D(s0, tex + float2(-px*3,0));		float4 c44 = tex2D(s0, tex + float2(-px*3,-py));
 float4 c45 = tex2D(s0, tex + float2(-px*3,-py*2));	float4 c46 = tex2D(s0, tex + float2(-px,-py)*3);
 float4 c47 = tex2D(s0, tex + float2(-px*2,-py*3));	float4 c48 = tex2D(s0, tex + float2(-px,-py*3));
+
+
+#if test == 1 //texture fetches arranged by distance. For cleaner looking code.
+
 
 		// 	[^9 ,^8 ,^7 ,^6 ,^7 ,^8 ,^9]
 		//	[^8 ,^6 ,^5 ,^4 ,^5 ,^6 ,^8]
@@ -124,6 +131,57 @@ float4x4 sampleFar[6]=
 		Mask += pow(phi,8)*(sF[4][0],sF[4][1],sF[4][2],sF[4][3]);//
 		Mask += pow(phi,9)*(sF[5][0],sF[5][1],sF[5][2],sF[5][3]);//
 #endif
+
+// -- Main Code --
+//	[c46,c47,c48,c25,c26,c27,c28] c25 c31 c37 c43
+//	[c45,c23,c24,c09,c10,c11,c29] c26 c30 c32 c36 c38 c42 c44 c48
+//	[c44,c22,c08,c01,c02,c12,c30] c27 c29 c33 c35 c39 c41 c45 c47
+//	[c43,c21,c07,c00,c03,c13,c31] c28 c34 c40 c46
+//	[c42,c20,c06,c05,c04,c14,c32]
+//	[c41,c19,c18,c17,c16,c15,c33]
+//	[c40,c39,c38,c37,c36,c35,c34]
+
+
+
+// Anti-Halo Filter //
+#if AntiHaloMode > 0
+
+float4 RangeMin  = 0;				// Placeholder declaration...
+	   //RangeMin -= RangeMin-c00;	// Center Pixel, softens lines...
+	   //Neigbor
+RangeMin -= RangeMin-min(RangeMin,min( min(c01,c05),min(c03,c07) ) );
+RangeMin -= RangeMin-min(RangeMin,min( min(c02,c07),min(c04,c08) ) );
+       //Near
+RangeMin -= RangeMin-min(RangeMin,min( min(c09,c17),min(c13,c21) ) );
+RangeMin -= RangeMin-min(RangeMin,min(min(min(c10,c18),min(c12,c20)),min(min(c14,c22),min(c16,c24)))); //Denitely Keep
+       RangeMin -= RangeMin-min(RangeMin,min( min(c11,c19),min(c15,c23) ) );
+       //Far
+//RangeMin -= RangeMin-min(RangeMin,min( min(c25,c37),min(c31,c43) ) );
+//       RangeMin -= RangeMin-min(RangeMin,min(min(min(c26,c30),min(c32,c36)),min(min(c38,c42),min(c44,c48))));
+//	   RangeMin -= RangeMin-min(RangeMin,min(min(min(c27,c29),min(c33,c35)),min(min(c39,c41),min(c45,c47))));
+//RangeMin -= RangeMin-min(RangeMin,min( min(c28,c34),min(c40,c46) ) );
+
+
+float4 RangeMax  = 0;				// Placeholder declaration...
+	 //RangeMax  -= RangeMax-c00;	// Center Pixel, softens lines...
+     //Neigbor
+RangeMax -= RangeMax-max(RangeMax,max( max(c01,c05),max(c03,c07) ) );
+RangeMax -= RangeMax-max(RangeMax,max( max(c02,c07),max(c04,c08) ) );
+     //Near
+RangeMax -= RangeMax-max(RangeMax,max( max(c09,c17),max(c13,c21) ) );
+RangeMax -= RangeMax-max(RangeMax,max(max(max(c10,c18),max(c12,c20)),max(max(c14,c22),max(c16,c24)))); //Denitely Keep
+       RangeMax -= RangeMax-max(RangeMax,max( max(c11,c19),max(c15,c23) ) );
+     //Far
+//RangeMax -= RangeMax-max(RangeMax,max( max(c25,c37),max(c31,c43) ) );
+//       RangeMax -= RangeMax-max(RangeMax,max(max(max(c26,c30),max(c32,c36)),max(max(c38,c42),max(c44,c48))));
+//	   RangeMax -= RangeMax-max(RangeMax,max(max(max(c27,c29),max(c33,c35)),max(max(c39,c41),max(c45,c47))));
+//RangeMax -= RangeMax-max(RangeMax,max( max(c28,c34),max(c40,c46) ) );
+
+
+
+
+#endif
+
 
 
 // -- Blur Mask Kernel --
@@ -170,6 +228,9 @@ float4	Mask  = pow(Phi,5)*(c01+c03+c05+c07);	//	[^2 ,^4 ,^5 ,^4 ,^2]
 #elif BlurMaskKernel == 3 && MaskSmooth == 0
 	Mask += pow(Phi,6)*c00;	Mask  /= 134,082; 	// ((sqrt(1,25)+0,5)^5*4) + ((sqrt(1,25)+0,5)^4*4) + ((sqrt(1,25)+0,5)^3*4) + ((sqrt(1,25)+0,5)^1*4) + ((sqrt(1,25)+0,5)^2*8) + ((sqrt(1,25)+0,5)^6*1)
 #endif
+
+
+
 //////////////////////////
 #if BlurMaskKernel == 4 // 5x5 Powers of phi - An experiment to reduce the instruction count and further increase precision...
 												// 	[^6 ,^5 ,^4 ,^5 ,^6]
@@ -184,6 +245,9 @@ float4	Mask  = pow(phi,2)*(c01+c03+c05+c07);	//	[^5 ,^3 ,^2 ,^3 ,^5]
 #elif BlurMaskKernel == 4 && MaskSmooth == 0
 	Mask += phi*c00;	Mask /= 4+phi; 		// ((sqrt(1,25)-0,5)^2*4) + ((sqrt(1,25)-0,5)^3*4) + ((sqrt(1,25)-0,5)^4*4) + ((sqrt(1,25)-0,5)^6*4) + ((sqrt(1,25)-0,5)^5*8) + ((sqrt(1,25)-0,5)^1*1)
 #endif
+
+
+
 
 #if BlurMaskKernel == 5 // 5x5 Powers of phi - An experiment to reduce the instruction count and further increase precision...
 
@@ -247,7 +311,37 @@ float4	Mask  = pow(phi,2)*(c01+c03+c05+c07);		// 	[^9 ,^8 ,^7 ,^6 ,^7 ,^8 ,^9]
 #endif																		// ((sqrt(1,25)-0,5)^2*4) + ((sqrt(1,25)-0,5)^3*4) + ((sqrt(1,25)-0,5)^4*4) + ((sqrt(1,25)-0,5)^5*8) - ((sqrt(1,25)-0,5)^7*8) - ((sqrt(1,25)-0,5)^8*8) - ((sqrt(1,25)-0,5)^9*4) + ((sqrt(1,25)-0,5)^1*1)
 
 // -- Edge Detection Operator --
-////////////////////////
+/////////////////////////
+#if EdgeDetector == 1 // Low-Precision Fibonacci-Operators // Experimental ( 1.6~~:1 ) approcimation of Phi; 
+// [ -4,-13,-4 ]	[  4,  0, -4 ]	[  0,  4, 13 ]	[-13, -4,  0 ]
+// [  0,  0, 0 ]	[ 13,  0,-13 ]	[ -4,  0,  4 ]	[ -4,  0,  4 ]
+// [  4, 13, 4 ]	[  4,  0, -4 ]	[-13, -4,  0 ]	[  0,  4, 13 ]
+// Semi-Diagonals // Meant to reduce amplification of aliasing and interlacing artefacts over regular operators, slightly softer results on average.
+// [ -5,-13,-21 ]	[ 21,  8, -5 ]	[ -5,  8, 21 ]	[-21,-13, -5 ]
+// [  8,  0, -8 ]	[ 13,  0,-13 ]	[-13,  0, 13 ]	[ -8,  0,  8 ]
+// [ 21, 13,  5 ]	[  5, -8,-21 ]	[-21, -8,  5 ]	[  5, 13, 21 ]
+float4 EdgeTierData = { 4, 13, 0.21, 0.34 };
+float2x4 EdgeTierData = { 21, 13, 8, 5,
+						4, 0, 0.21,	0.47 };
+//[0][0], [0][1], [0][2], [0][3]
+//[1][0], [1][1], [1][2], [1][3]
+#endif
+#if EdgeDetectionOperators == 0
+float4x4 Edges1={(abs(abs(c05)-abs(c01))*EdgeTierData[1]
++(abs(c04)-abs(c08)+abs(c06)-abs(c02))*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(abs(c07)-abs(c03))*EdgeTierData[1]+(abs(c06)-abs(c02)+abs(c08)-abs(c04))*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(abs(c02)-abs(c06))*EdgeTierData[1]+(abs(c01)-abs(c05)+abs(c03)-abs(c07))*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(abs(c04)-abs(c08))*EdgeTierData[1]+(abs(c03)-abs(c07)+abs(c05)-abs(c01))*EdgeTierData[0])/EdgeTierData[2]};
+
+float4x4 Edges2={(abs(abs(c05)-abs(c01)+abs(c06)-abs(c02))*EdgeTierData[1]+abs(abs(c04)-abs(c08)+abs(c07)-abs(c03))*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(abs(c07)-abs(c03)+abs(c08)-abs(c04))*EdgeTierData[1]+abs(abs(c06)-abs(c02)+abs(c01)-abs(c05))*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(abs(c02)-abs(c06)+abs(c03)-abs(c07))*EdgeTierData[1]+abs(abs(c01)-abs(c05)+abs(c04)-abs(c08))*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(abs(c04)-abs(c08)+abs(c05)-abs(c01))*EdgeTierData[1]+abs(abs(c03)-abs(c07)+abs(c06)-abs(c02))*EdgeTierData[0])/EdgeTierData[3]};
+#endif
+
+/////////////////////////
+
+/////////////////////////
 #if EdgeDetector == 2 // Scharr-Operators -  Excellent for Anime, CGI & Live content alike.
 // [ -3,-10,-3 ]	[  3,  0, -3 ]	[  0,  3, 10 ]	[-10, -3,  0 ]
 // [  0,  0, 0 ]	[ 10,  0,-10 ]	[ -3,  0,  3 ]	[ -3,  0,  3 ]
@@ -319,9 +413,53 @@ float4 EdgeTierData = { .5, Phi, (1+Phi/100), (1+Phi*2/100) }; // Latter values 
 // Idea, halo suppression:
 //if dot DetectEdges.r+DetectEdges.b+DetectEdges.g > ;
 
-#if EdgeDetectionOperators == 0
+#if EdgeDetectionOperators == 11 || EdgeDetectionOperators == 33
+float4x4 Edges1={abs((c05-c01)*EdgeTierData[1]+(c04-c08+c06-c02)*EdgeTierData[0])/EdgeTierData[2] ,
+				 abs((c07-c03)*EdgeTierData[1]+(c06-c02+c08-c04)*EdgeTierData[0])/EdgeTierData[2] ,
+				 abs((c02-c06)*EdgeTierData[1]+(c01-c05+c03-c07)*EdgeTierData[0])/EdgeTierData[2] ,
+				 abs((c04-c08)*EdgeTierData[1]+(c03-c07+c05-c01)*EdgeTierData[0])/EdgeTierData[2]};
+#endif
+#if EdgeDetectionOperators == 22 || EdgeDetectionOperators == 33
+float4x4 Edges2={abs((c05-c01+c06-c02)*EdgeTierData[1]+(c04-c08+c07-c03)*EdgeTierData[0])/EdgeTierData[3] ,
+				 abs((c07-c03+c08-c04)*EdgeTierData[1]+(c06-c02+c01-c05)*EdgeTierData[0])/EdgeTierData[3] ,
+				 abs((c02-c06+c03-c07)*EdgeTierData[1]+(c01-c05+c04-c08)*EdgeTierData[0])/EdgeTierData[3] ,
+				 abs((c04-c08+c05-c01)*EdgeTierData[1]+(c03-c07+c06-c02)*EdgeTierData[0])/EdgeTierData[3]};
+#endif
+#if EdgeDetectionOperators == 44 || EdgeDetectionOperators == 66
+float4x4 Edges1={(abs(c05-c01)*EdgeTierData[1]+(c04-c08+c06-c02)*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(c07-c03)*EdgeTierData[1]+(c06-c02+c08-c04)*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(c02-c06)*EdgeTierData[1]+(c01-c05+c03-c07)*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(c04-c08)*EdgeTierData[1]+(c03-c07+c05-c01)*EdgeTierData[0])/EdgeTierData[2]};
+#endif
+#if EdgeDetectionOperators == 55 || EdgeDetectionOperators == 66
+float4x4 Edges2={(abs(c05-c01+c06-c02)*EdgeTierData[1]+abs(c04-c08+c07-c03)*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(c07-c03+c08-c04)*EdgeTierData[1]+abs(c06-c02+c01-c05)*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(c02-c06+c03-c07)*EdgeTierData[1]+abs(c01-c05+c04-c08)*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(c04-c08+c05-c01)*EdgeTierData[1]+abs(c03-c07+c06-c02)*EdgeTierData[0])/EdgeTierData[3]};
+#endif
+#if EdgeDetectionOperators == 77 || EdgeDetectionOperators == 99
+float4x4 Edges1={(abs(abs(c05)-abs(c01))*EdgeTierData[1]+(abs(c04)-abs(c08)+abs(c06)-abs(c02))*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(abs(c07)-abs(c03))*EdgeTierData[1]+(abs(c06)-abs(c02)+abs(c08)-abs(c04))*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(abs(c02)-abs(c06))*EdgeTierData[1]+(abs(c01)-abs(c05)+abs(c03)-abs(c07))*EdgeTierData[0])/EdgeTierData[2] ,
+				 (abs(abs(c04)-abs(c08))*EdgeTierData[1]+(abs(c03)-abs(c07)+abs(c05)-abs(c01))*EdgeTierData[0])/EdgeTierData[2]};
+#endif
+#if EdgeDetectionOperators == 88 || EdgeDetectionOperators == 99
+float4x4 Edges2={(abs(abs(c05)-abs(c01)+abs(c06)-abs(c02))*EdgeTierData[1]+abs(abs(c04)-abs(c08)+abs(c07)-abs(c03))*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(abs(c07)-abs(c03)+abs(c08)-abs(c04))*EdgeTierData[1]+abs(abs(c06)-abs(c02)+abs(c01)-abs(c05))*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(abs(c02)-abs(c06)+abs(c03)-abs(c07))*EdgeTierData[1]+abs(abs(c01)-abs(c05)+abs(c04)-abs(c08))*EdgeTierData[0])/EdgeTierData[3] ,
+				 (abs(abs(c04)-abs(c08)+abs(c05)-abs(c01))*EdgeTierData[1]+abs(abs(c03)-abs(c07)+abs(c06)-abs(c02))*EdgeTierData[0])/EdgeTierData[3]};
+#endif
+
+// -- Anti-Flicker Filter --
+#if AntiFlicker == 1 // 
+// [ -2,-1,-2 ]
+// [ -1, 8,-1 ]
+// [ -2,-1,-2 ]
+float3 AntiFlickerData = { 4, phi^2, phi };
+abs( c00 - ((c01+c03+c05+c07)*AntiFlickerData[1]+(c02+c04+c06+c08)*AntiFlickerData[2])/AntiFlickerData[0] )
 
 #endif
+
 #if EdgeDetectionOperators == 1 || EdgeDetectionOperators == 3
 float4x4 Edges1={abs((c05*EdgeTierData[1]+(c04+c06)*EdgeTierData[0])-(c01*EdgeTierData[1]+(c08+c02)*EdgeTierData[0]))/EdgeTierData[2] ,
 				 abs((c07*EdgeTierData[1]+(c06+c08)*EdgeTierData[0])-(c03*EdgeTierData[1]+(c02+c04)*EdgeTierData[0]))/EdgeTierData[2] ,
@@ -372,7 +510,7 @@ float4  DetectEdges ={saturate( max(max(max( Edges1[0],Edges1[1] ) , max( Edges1
 
 
 
-
+//old stuff that needs to be rewritten:
 #elif EdgeMathMode == 1	// Kirsch-like max approach:
 
 float	DetectEdges = max(max(Edge1,Edge2),max(Edge3,Edge4));
@@ -433,10 +571,22 @@ TextureSharpeningMath = c00-(Mask-c00)*(1/EdgeStrength)*TextureSharpenFactor;
 TextureSharpeningMath = c00-(Mask-c00)*TextureSharpenFactor;
 #endif
 
+#if AntiHaloMode == 1 || AntiHaloMode == 3
+float4 FinalTexture=clamp(TextureSharpeningMath, RangeMin, RangeMax);
+#else
+float4 FinalTexture=TextureSharpeningMath;
+#endif
+#if AntiHaloMode == 2 || AntiHaloMode == 3
+float4 FinalEdge=clamp(EdgeSharpeningMath, RangeMin, RangeMax);
+#else
+float4 FinalEdge=EdgeSharpeningMath;
+#endif
+
+
 	 if (EdgeStrength>HighThreshold)
-		{EdgeSharpeningMath.a = 1; return EdgeSharpeningMath;}
+		{EdgeSharpeningMath.a = 1; return FinalEdge;}
 else if (EdgeStrength>LowThreshold)
-		{TextureSharpeningMath.a = 1; return TextureSharpeningMath;}
+		{TextureSharpeningMath.a = 1; return FinalTexture;}
 	 else{c00.a = 1; return c00;}
 
 }
