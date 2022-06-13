@@ -13,18 +13,18 @@
 // -- Settings --
 
 		// Strength of Edge Sharpening. Also meant to take negative values for blurring, but this is broken; non-deterministic behavour; need to redo the maths.
-#define EdgeSharpenFactor		1			//1.618//2.618//4.236//6.854102 Optimal range: (0.4) - (2.4) 1 - 3
+#define EdgeSharpenFactor		pow(Phi,1)			//1.618//2.618//4.236//6.854102 Optimal range: (0.4) - (2.4) 1 - 3
 		// Strength of Texture Sharpening. Also meant to take negative values for blurring, but this is broken; non-deterministic behavour; need to redo the maths.
-#define TextureSharpenFactor	3			// Optimal range: (1.6) - (3.2) 2 - 6
+#define TextureSharpenFactor	pow(Phi,3)			// Optimal range: (1.6) - (3.2) 2 - 6
 		// Where Texture ends and Edge starts.
-#define HighThreshold			1			//.618//(2/3)	// Optimal range: ?
+#define HighThreshold			pow(phi,1)			//.618//(2/3)	// Optimal range: ?
 		// Where gradient protection ends and Texture starts.
-#define LowThreshold			2			//.382//(1/3)	// Optimal range: ?
+#define LowThreshold			pow(phi,4)			//.382//(1/3)	// Optimal range: ?
 
 		// Select which Edge Detection Operator to use.
-#define EdgeDetector 27
+#define EdgeDetector 26
 		// Choose whether to use Semi-Diagonal or Regular Edge Detection Operators.
-#define EdgeDetectionOperators 2 // 0=Off 1=Regular 2=SemiDiagonal 3=Both
+#define EdgeDetectionOperators 5 // 0=Off 1=Regular 2=SemiDiagonal 3=Both
 		// Select which edge detection math to use.
 #define EdgeMathMode 0
 
@@ -42,11 +42,10 @@
 #define DynamicSharpening 3 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
 
 		// Makes sharpening strength inversely proportional to the probability that an Edge has been detected. Inverts Dynamic Sharpening to avoid oversharpening of Textures or Edges.
-#define ReciprocalDynamicS 2 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
+#define ReciprocalDynamicS 0 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
 
 #define AntiHaloMode 3 // 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
 #define LimitingFactor 1 // use 1 for anime, 1.618 for live
-
 //#define test 1
 
 // -- Main Code --
@@ -89,9 +88,6 @@ float4 c41 = tex2D(s0, tex + float2(-px*3,py*2));	float4 c42 = tex2D(s0, tex + f
 float4 c43 = tex2D(s0, tex + float2(-px*3,0));		float4 c44 = tex2D(s0, tex + float2(-px*3,-py));
 float4 c45 = tex2D(s0, tex + float2(-px*3,-py*2));	float4 c46 = tex2D(s0, tex + float2(-px,-py)*3);
 float4 c47 = tex2D(s0, tex + float2(-px*2,-py*3));	float4 c48 = tex2D(s0, tex + float2(-px,-py*3));
-
-
-
 
 
 #if test == 1 //texture fetches arranged by distance. For cleaner looking code.
@@ -159,7 +155,7 @@ RangeMin -= RangeMin-min(RangeMin,min( min(c02,c07),min(c04,c08) ) );
        //Near
 RangeMin -= RangeMin-min(RangeMin,min( min(c09,c17),min(c13,c21) ) );
 RangeMin -= RangeMin-min(RangeMin,min(min(min(c10,c18),min(c12,c20)),min(min(c14,c22),min(c16,c24)))); //Denitely Keep
-//       RangeMin -= RangeMin-min(RangeMin,min( min(c11,c19),min(c15,c23) ) );
+       RangeMin -= RangeMin-min(RangeMin,min( min(c11,c19),min(c15,c23) ) );
        //Far
 //RangeMin -= RangeMin-min(RangeMin,min( min(c25,c37),min(c31,c43) ) );
 //       RangeMin -= RangeMin-min(RangeMin,min(min(min(c26,c30),min(c32,c36)),min(min(c38,c42),min(c44,c48))));
@@ -175,7 +171,7 @@ RangeMax -= RangeMax-max(RangeMax,max( max(c02,c07),max(c04,c08) ) );
      //Near
 RangeMax -= RangeMax-max(RangeMax,max( max(c09,c17),max(c13,c21) ) );
 RangeMax -= RangeMax-max(RangeMax,max(max(max(c10,c18),max(c12,c20)),max(max(c14,c22),max(c16,c24)))); //Denitely Keep
-//       RangeMax -= RangeMax-max(RangeMax,max( max(c11,c19),max(c15,c23) ) );
+       RangeMax -= RangeMax-max(RangeMax,max( max(c11,c19),max(c15,c23) ) );
      //Far
 //RangeMax -= RangeMax-max(RangeMax,max( max(c25,c37),max(c31,c43) ) );
 //       RangeMax -= RangeMax-max(RangeMax,max(max(max(c26,c30),max(c32,c36)),max(max(c38,c42),max(c44,c48))));
@@ -233,9 +229,6 @@ float4	Mask  = pow(Phi,5)*(c01+c03+c05+c07);	//	[^2 ,^4 ,^5 ,^4 ,^2]
 #elif BlurMaskKernel == 3 && MaskSmooth == 0
 	Mask += pow(Phi,6)*c00;	Mask  /= 134,082; 	// ((sqrt(1,25)+0,5)^5*4) + ((sqrt(1,25)+0,5)^4*4) + ((sqrt(1,25)+0,5)^3*4) + ((sqrt(1,25)+0,5)^1*4) + ((sqrt(1,25)+0,5)^2*8) + ((sqrt(1,25)+0,5)^6*1)
 #endif
-
-
-
 //////////////////////////
 #if BlurMaskKernel == 4 // 5x5 Powers of phi - An experiment to reduce the instruction count and further increase precision...
 												// 	[^6 ,^5 ,^4 ,^5 ,^6]
@@ -250,9 +243,6 @@ float4	Mask  = pow(phi,2)*(c01+c03+c05+c07);	//	[^5 ,^3 ,^2 ,^3 ,^5]
 #elif BlurMaskKernel == 4 && MaskSmooth == 0
 	Mask += phi*c00;	Mask /= 4+phi; 		// ((sqrt(1,25)-0,5)^2*4) + ((sqrt(1,25)-0,5)^3*4) + ((sqrt(1,25)-0,5)^4*4) + ((sqrt(1,25)-0,5)^6*4) + ((sqrt(1,25)-0,5)^5*8) + ((sqrt(1,25)-0,5)^1*1)
 #endif
-
-
-
 
 #if BlurMaskKernel == 5 // 5x5 Powers of phi - An experiment to reduce the instruction count and further increase precision...
 
@@ -301,34 +291,6 @@ float4	Mask  = pow(phi,2)*(c01+c03+c05+c07);		// 	[^9 ,^8 ,^7 ,^6 ,^7 ,^8 ,^9]
 
 // -- Edge Detection Operator --
 /////////////////////////
-#if EdgeDetector == 0 // Low-Precision Fibonacci-Operators // Experimental ( 1.6~~:1 ) approcimation of Phi; 
-// [ -4,-13,-4 ]	[  4,  0, -4 ]	[  0,  4, 13 ]	[-13, -4,  0 ]
-// [  0,  0, 0 ]	[ 13,  0,-13 ]	[ -4,  0,  4 ]	[ -4,  0,  4 ]
-// [  4, 13, 4 ]	[  4,  0, -4 ]	[-13, -4,  0 ]	[  0,  4, 13 ]
-// Semi-Diagonals // Meant to reduce amplification of aliasing and interlacing artefacts over regular operators, slightly softer results on average.
-// [ -5,-13,-21 ]	[ 21,  8, -5 ]	[ -5,  8, 21 ]	[-21,-13, -5 ]
-// [  8,  0, -8 ]	[ 13,  0,-13 ]	[-13,  0, 13 ]	[ -8,  0,  8 ]
-// [ 21, 13,  5 ]	[  5, -8,-21 ]	[-21, -8,  5 ]	[  5, 13, 21 ]
-
-float2x4 EdgeTierData = { 21, 13, 8, 5,
-						4, 0, 0.21,	0.47 };
-#endif
-#if EdgeDetectionOperators == 0
-float4x4 Edges1={(abs(abs(c05)-abs(c01))*EdgeTierData[0][1]+(abs(c04)-abs(c08)+abs(c06)-abs(c02))*EdgeTierData[1][0])/EdgeTierData[1][2] ,
-				 (abs(abs(c07)-abs(c03))*EdgeTierData[0][1]+(abs(c06)-abs(c02)+abs(c08)-abs(c04))*EdgeTierData[1][0])/EdgeTierData[1][2] ,
-				 (abs(abs(c02)-abs(c06))*EdgeTierData[0][1]+(abs(c01)-abs(c05)+abs(c03)-abs(c07))*EdgeTierData[1][0])/EdgeTierData[1][2] ,
-				 (abs(abs(c04)-abs(c08))*EdgeTierData[0][1]+(abs(c03)-abs(c07)+abs(c05)-abs(c01))*EdgeTierData[1][0])/EdgeTierData[1][2]};
-
-float4x4 Edges2={(abs(abs(c06)-abs(c02))*EdgeTierData[0][0]+abs(c05)-abs(c01))*EdgeTierData[0][1]+abs(abs(c07)-abs(c03)*EdgeTierData[0][2]+abs(c04)-abs(c08))*EdgeTierData[0][3])/EdgeTierData[1][3] ,
-				 (abs(abs(c08)-abs(c04))*EdgeTierData[0][0]+abs(c07)-abs(c03))*EdgeTierData[0][1]+abs(abs(c01)-abs(c05)*EdgeTierData[0][2]+abs(c06)-abs(c02))*EdgeTierData[0][3])/EdgeTierData[1][3] ,
-				 (abs(abs(c02)-abs(c06))*EdgeTierData[0][0]+abs(c03)-abs(c07))*EdgeTierData[0][1]+abs(abs(c01)-abs(c05)*EdgeTierData[0][2]+abs(c04)-abs(c08))*EdgeTierData[0][3])/EdgeTierData[1][3] ,
-				 (abs(abs(c04)-abs(c08))*EdgeTierData[0][0]+abs(c05)-abs(c01))*EdgeTierData[0][1]+abs(abs(c03)-abs(c07)*EdgeTierData[0][2]+abs(c06)-abs(c02))*EdgeTierData[0][3])/EdgeTierData[1][3]};
-#endif
-
-
-
-
-/////////////////////////
 #if EdgeDetector == 2 // Scharr-Operators -  Excellent for Anime, CGI & Live content alike.
 // [ -3,-10,-3 ]	[  3,  0, -3 ]	[  0,  3, 10 ]	[-10, -3,  0 ]
 // [  0,  0, 0 ]	[ 10,  0,-10 ]	[ -3,  0,  3 ]	[ -3,  0,  3 ]
@@ -362,6 +324,21 @@ float4 EdgeTierData = { 4, 13, 0.21, 0.34 };
 // [  72,   0, -72 ]	[ 233,  0,-233 ]	[-233,  0, 233 ]	[ -72,   0,  72 ]
 // [ 233, 233,  72 ]	[  72,-72,-233 ]	[-233,-72,  72 ]	[  72, 233, 233 ]
 float4 EdgeTierData = { 72, 233, 3.77, 6.10 };
+#endif
+/////////////////////////
+#if EdgeDetector == 222 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; where both values are divided across two pixels.
+float4 EdgeTierData = { 72, 116.5, 2.605, 3.77 };
+#endif
+//////////////////////////
+#if EdgeDetector == 223 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; where both values are divided across two pixels.
+float4 EdgeTierData = { 144, 233, 5.21, 7.54 };
+#endif
+/////////////////////////
+#if EdgeDetector == 224 // Medium-Precision GoldenRatio-Operators -   
+// Experimental ( 1.61805[...]:1 ) approcimation of Phi; hybrid combo with different behavior for regular and semi-diagonal operators.
+float4 EdgeTierData = { 72, 233, 3.77, 5.21 };
 #endif
 // Special exception for Experimentation purposes. Will eventually get either moved or deleted depending on the results.
 #if SemiDiagonalOperators == 1  && EdgeDetector == 24
@@ -420,41 +397,79 @@ abs( c00 - ((c01+c03+c05+c07)*AntiFlickerData[1]+(c02+c04+c06+c08)*AntiFlickerDa
 #if EdgeDetectionOperators == 0
 
 #endif
-#if EdgeDetectionOperators == 1 || EdgeDetectionOperators == 3
+
+#if EdgeDetectionOperators == 11 || EdgeDetectionOperators == 33
 float4x4 Edges1={abs((c05-c01)*EdgeTierData[1]+(c04-c08+c06-c02)*EdgeTierData[0])/EdgeTierData[2] ,
 				 abs((c07-c03)*EdgeTierData[1]+(c06-c02+c08-c04)*EdgeTierData[0])/EdgeTierData[2] ,
 				 abs((c02-c06)*EdgeTierData[1]+(c01-c05+c03-c07)*EdgeTierData[0])/EdgeTierData[2] ,
 				 abs((c04-c08)*EdgeTierData[1]+(c03-c07+c05-c01)*EdgeTierData[0])/EdgeTierData[2]};
 #endif
-#if EdgeDetectionOperators == 2 || EdgeDetectionOperators == 3
+#if EdgeDetectionOperators == 22 || EdgeDetectionOperators == 33
 float4x4 Edges2={abs((c05-c01+c06-c02)*EdgeTierData[1]+(c04-c08+c07-c03)*EdgeTierData[0])/EdgeTierData[3] ,
 				 abs((c07-c03+c08-c04)*EdgeTierData[1]+(c06-c02+c01-c05)*EdgeTierData[0])/EdgeTierData[3] ,
 				 abs((c02-c06+c03-c07)*EdgeTierData[1]+(c01-c05+c04-c08)*EdgeTierData[0])/EdgeTierData[3] ,
 				 abs((c04-c08+c05-c01)*EdgeTierData[1]+(c03-c07+c06-c02)*EdgeTierData[0])/EdgeTierData[3]};
 #endif
-#if EdgeDetectionOperators == 4 || EdgeDetectionOperators == 6
+#if EdgeDetectionOperators == 44 || EdgeDetectionOperators == 66
 float4x4 Edges1={(abs(c05-c01)*EdgeTierData[1]+abs(c04-c08+c06-c02)*EdgeTierData[0])/EdgeTierData[2] ,
 				 (abs(c07-c03)*EdgeTierData[1]+abs(c06-c02+c08-c04)*EdgeTierData[0])/EdgeTierData[2] ,
 				 (abs(c02-c06)*EdgeTierData[1]+abs(c01-c05+c03-c07)*EdgeTierData[0])/EdgeTierData[2] ,
 				 (abs(c04-c08)*EdgeTierData[1]+abs(c03-c07+c05-c01)*EdgeTierData[0])/EdgeTierData[2]};
 #endif
-#if EdgeDetectionOperators == 5 || EdgeDetectionOperators == 6
+#if EdgeDetectionOperators == 55 || EdgeDetectionOperators == 66
 float4x4 Edges2={(abs(c05-c01+c06-c02)*EdgeTierData[1]+abs(c04-c08+c07-c03)*EdgeTierData[0])/EdgeTierData[3] ,
 				 (abs(c07-c03+c08-c04)*EdgeTierData[1]+abs(c06-c02+c01-c05)*EdgeTierData[0])/EdgeTierData[3] ,
 				 (abs(c02-c06+c03-c07)*EdgeTierData[1]+abs(c01-c05+c04-c08)*EdgeTierData[0])/EdgeTierData[3] ,
 				 (abs(c04-c08+c05-c01)*EdgeTierData[1]+abs(c03-c07+c06-c02)*EdgeTierData[0])/EdgeTierData[3]};
 #endif
-#if EdgeDetectionOperators == 7 || EdgeDetectionOperators == 9
+#if EdgeDetectionOperators == 77 || EdgeDetectionOperators == 99
 float4x4 Edges1={(abs(abs(c05)-abs(c01))*EdgeTierData[1]+(abs(c04)-abs(c08)+abs(c06)-abs(c02))*EdgeTierData[0])/EdgeTierData[2] ,
 				 (abs(abs(c07)-abs(c03))*EdgeTierData[1]+(abs(c06)-abs(c02)+abs(c08)-abs(c04))*EdgeTierData[0])/EdgeTierData[2] ,
 				 (abs(abs(c02)-abs(c06))*EdgeTierData[1]+(abs(c01)-abs(c05)+abs(c03)-abs(c07))*EdgeTierData[0])/EdgeTierData[2] ,
 				 (abs(abs(c04)-abs(c08))*EdgeTierData[1]+(abs(c03)-abs(c07)+abs(c05)-abs(c01))*EdgeTierData[0])/EdgeTierData[2]};
 #endif
-#if EdgeDetectionOperators == 8 || EdgeDetectionOperators == 9
+#if EdgeDetectionOperators == 88 || EdgeDetectionOperators == 99
 float4x4 Edges2={(abs(abs(c05)-abs(c01)+abs(c06)-abs(c02))*EdgeTierData[1]+abs(abs(c04)-abs(c08)+abs(c07)-abs(c03))*EdgeTierData[0])/EdgeTierData[3] ,
 				 (abs(abs(c07)-abs(c03)+abs(c08)-abs(c04))*EdgeTierData[1]+abs(abs(c06)-abs(c02)+abs(c01)-abs(c05))*EdgeTierData[0])/EdgeTierData[3] ,
 				 (abs(abs(c02)-abs(c06)+abs(c03)-abs(c07))*EdgeTierData[1]+abs(abs(c01)-abs(c05)+abs(c04)-abs(c08))*EdgeTierData[0])/EdgeTierData[3] ,
 				 (abs(abs(c04)-abs(c08)+abs(c05)-abs(c01))*EdgeTierData[1]+abs(abs(c03)-abs(c07)+abs(c06)-abs(c02))*EdgeTierData[0])/EdgeTierData[3]};
+#endif
+
+#if EdgeDetectionOperators == 1 || EdgeDetectionOperators == 3
+float4x4 Edges1={abs((c05*EdgeTierData[1]+(c04+c06)*EdgeTierData[0])-(c01*EdgeTierData[1]+(c08+c02)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs((c07*EdgeTierData[1]+(c06+c08)*EdgeTierData[0])-(c03*EdgeTierData[1]+(c02+c04)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs((c02*EdgeTierData[1]+(c01+c03)*EdgeTierData[0])-(c06*EdgeTierData[1]+(c05+c07)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs((c04*EdgeTierData[1]+(c03+c05)*EdgeTierData[0])-(c08*EdgeTierData[1]+(c07+c01)*EdgeTierData[0]))/EdgeTierData[2]};
+#endif
+#if EdgeDetectionOperators == 2 || EdgeDetectionOperators == 3
+float4x4 Edges2={abs(((c05+c06)*EdgeTierData[1]+(c04+c07)*EdgeTierData[0])-((c01+c02)*EdgeTierData[1]+(c08+c03)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs(((c07+c08)*EdgeTierData[1]+(c06+c01)*EdgeTierData[0])-((c03+c04)*EdgeTierData[1]+(c02+c05)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs(((c02+c03)*EdgeTierData[1]+(c01+c04)*EdgeTierData[0])-((c06+c07)*EdgeTierData[1]+(c05+c08)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs(((c04+c05)*EdgeTierData[1]+(c03+c06)*EdgeTierData[0])-((c08+c01)*EdgeTierData[1]+(c07+c02)*EdgeTierData[0]))/EdgeTierData[3]};
+#endif
+#if EdgeDetectionOperators == 4 || EdgeDetectionOperators == 6
+float4x4 Edges1={abs(abs(c05*EdgeTierData[1]+(c04+c06)*EdgeTierData[0])-abs(c01*EdgeTierData[1]+(c08+c02)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs(abs(c07*EdgeTierData[1]+(c06+c08)*EdgeTierData[0])-abs(c03*EdgeTierData[1]+(c02+c04)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs(abs(c02*EdgeTierData[1]+(c01+c03)*EdgeTierData[0])-abs(c06*EdgeTierData[1]+(c05+c07)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs(abs(c04*EdgeTierData[1]+(c03+c05)*EdgeTierData[0])-abs(c08*EdgeTierData[1]+(c07+c01)*EdgeTierData[0]))/EdgeTierData[2]};
+#endif
+#if EdgeDetectionOperators == 5 || EdgeDetectionOperators == 6
+float4x4 Edges2={abs(abs((c05+c06)*EdgeTierData[1]+(c04+c07)*EdgeTierData[0])-abs((c01+c02)*EdgeTierData[1]+(c08+c03)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs(abs((c07+c08)*EdgeTierData[1]+(c06+c01)*EdgeTierData[0])-abs((c03+c04)*EdgeTierData[1]+(c02+c05)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs(abs((c02+c03)*EdgeTierData[1]+(c01+c04)*EdgeTierData[0])-abs((c06+c07)*EdgeTierData[1]+(c05+c08)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs(abs((c04+c05)*EdgeTierData[1]+(c03+c06)*EdgeTierData[0])-abs((c08+c01)*EdgeTierData[1]+(c07+c02)*EdgeTierData[0]))/EdgeTierData[3]};
+#endif
+#if EdgeDetectionOperators == 7 || EdgeDetectionOperators == 9
+float4x4 Edges1={abs(abs(c05)*EdgeTierData[1]+(abs(c04)+abs(c06))*EdgeTierData[0])-(abs(c01)*EdgeTierData[1]+(abs(c08)+abs(c02)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs(abs(c07)*EdgeTierData[1]+(abs(c06)+abs(c08))*EdgeTierData[0])-(abs(c03)*EdgeTierData[1]+(abs(c02)+abs(c04)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs(abs(c02)*EdgeTierData[1]+(abs(c01)+abs(c03))*EdgeTierData[0])-(abs(c06)*EdgeTierData[1]+(abs(c05)+abs(c07)*EdgeTierData[0]))/EdgeTierData[2] ,
+				 abs(abs(c04)*EdgeTierData[1]+(abs(c03)+abs(c05))*EdgeTierData[0])-(abs(c08)*EdgeTierData[1]+(abs(c07)+abs(c01)*EdgeTierData[0]))/EdgeTierData[2]};
+#endif
+#if EdgeDetectionOperators == 8 || EdgeDetectionOperators == 9
+float4x4 Edges2={abs((abs(c05)+abs(c06))*EdgeTierData[1]+(abs(c04)+abs(c07))*EdgeTierData[0])-((abs(c01)+abs(c02))*EdgeTierData[1]+(abs(c08)+abs(c03)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs((abs(c07)+abs(c08))*EdgeTierData[1]+(abs(c06)+abs(c01))*EdgeTierData[0])-((abs(c03)+abs(c04))*EdgeTierData[1]+(abs(c02)+abs(c05)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs((abs(c02)+abs(c03))*EdgeTierData[1]+(abs(c01)+abs(c04))*EdgeTierData[0])-((abs(c06)+abs(c07))*EdgeTierData[1]+(abs(c05)+abs(c08)*EdgeTierData[0]))/EdgeTierData[3] ,
+				 abs((abs(c04)+abs(c05))*EdgeTierData[1]+(abs(c03)+abs(c06))*EdgeTierData[0])-((abs(c08)+abs(c01))*EdgeTierData[1]+(abs(c07)+abs(c02)*EdgeTierData[0]))/EdgeTierData[3]};
 #endif
 
 // My Best experimental approach this far:
@@ -509,38 +524,26 @@ float	DetectEdges = dot(dot( abs(Edge1),abs(Edge2) ),dot( abs(Edge3),abs(Edge4) 
 //EdgeStrength Color Average - Softer
 	//float	EdgeStrength = (DetectEdges.r+DetectEdges.b+DetectEdges.g)/3;
 //EdgeStrength Color Max - Darker lines and weaker haloes due to better line adherence.
-	//float	EdgeStrength = max(max(DetectEdges.r,DetectEdges.b),DetectEdges.g);
+	float	EdgeStrength = max(max(DetectEdges.r,DetectEdges.b),DetectEdges.g);
 //EdgeStrength Color Sum - Too Blurry
 	//float	EdgeStrength = (DetectEdges.r+DetectEdges.b+DetectEdges.g);
-	
-	float	EdgeStrength = saturate(DetectEdges.r*DetectEdges.g*DetectEdges.b);
-
-//float4 c0;
-//	 if (dot(c00,c00) > dot(LowThreshold,LowThreshold))
-//		 {float4 c0 = c00;	return c0;	}
-//	 else{float4 c0 = Mask;	return c0;	}
-
-//
-//
-//
-//
 
 float4 EdgeSharpeningMath;
 #if DynamicSharpening == 2 && ReciprocalDynamicS == 0 || DynamicSharpening == 3 && ReciprocalDynamicS == 0 || DynamicSharpening == 2 && ReciprocalDynamicS == 1 || DynamicSharpening == 3 && ReciprocalDynamicS == 1
-EdgeSharpeningMath = c00-(Mask-c00)*(EdgeStrength)*pow(Phi,EdgeSharpenFactor);
+EdgeSharpeningMath = c00-(Mask-c00)*EdgeStrength*EdgeSharpenFactor;
 #elif DynamicSharpening == 2 && ReciprocalDynamicS == 2 || DynamicSharpening == 3 && ReciprocalDynamicS == 2 || DynamicSharpening == 2 && ReciprocalDynamicS == 3 || DynamicSharpening == 3 && ReciprocalDynamicS == 3
-EdgeSharpeningMath = c00-(Mask-c00)*(1/EdgeStrength)*pow(Phi,EdgeSharpenFactor);
+EdgeSharpeningMath = c00-(Mask-c00)*(1/EdgeStrength)*EdgeSharpenFactor;
 #else
-EdgeSharpeningMath = c00-(Mask-c00)*pow(Phi,EdgeSharpenFactor);
+EdgeSharpeningMath = c00-(Mask-c00)*EdgeSharpenFactor;
 #endif
 
 float4 TextureSharpeningMath;
 #if DynamicSharpening == 1 && ReciprocalDynamicS == 0 || DynamicSharpening == 3 && ReciprocalDynamicS == 0 || DynamicSharpening == 1 && ReciprocalDynamicS == 2 || DynamicSharpening == 3 && ReciprocalDynamicS == 2
-TextureSharpeningMath = c00-(Mask-c00)*(EdgeStrength)*pow(Phi,TextureSharpenFactor);
+TextureSharpeningMath = c00-(Mask-c00)*EdgeStrength*TextureSharpenFactor;
 #elif DynamicSharpening == 1 && ReciprocalDynamicS == 1 || DynamicSharpening == 3 && ReciprocalDynamicS == 1 || DynamicSharpening == 1 && ReciprocalDynamicS == 3 || DynamicSharpening == 3 && ReciprocalDynamicS == 3
-TextureSharpeningMath = c00-(Mask-c00)*(1/EdgeStrength)*pow(Phi,TextureSharpenFactor);
+TextureSharpeningMath = c00-(Mask-c00)*(1/EdgeStrength)*TextureSharpenFactor;
 #else
-TextureSharpeningMath = c00-(Mask-c00)*pow(Phi,TextureSharpenFactor);
+TextureSharpeningMath = c00-(Mask-c00)*TextureSharpenFactor;
 #endif
 
 #if AntiHaloMode == 1 || AntiHaloMode == 3
@@ -555,9 +558,9 @@ float4 FinalEdge=EdgeSharpeningMath;
 #endif
 
 
-	 if (EdgeStrength>pow(phi,HighThreshold))
+	 if (EdgeStrength>HighThreshold)
 		{EdgeSharpeningMath.a = 1; return FinalEdge;}
-else if (EdgeStrength>pow(phi,LowThreshold))
+else if (EdgeStrength>LowThreshold)
 		{TextureSharpeningMath.a = 1; return FinalTexture;}
 	 else{c00.a = 1; return c00;}
 

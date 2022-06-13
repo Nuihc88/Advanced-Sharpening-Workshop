@@ -420,6 +420,7 @@ abs( c00 - ((c01+c03+c05+c07)*AntiFlickerData[1]+(c02+c04+c06+c08)*AntiFlickerDa
 #if EdgeDetectionOperators == 0
 
 #endif
+
 #if EdgeDetectionOperators == 1 || EdgeDetectionOperators == 3
 float4x4 Edges1={abs((c05-c01)*EdgeTierData[1]+(c04-c08+c06-c02)*EdgeTierData[0])/EdgeTierData[2] ,
 				 abs((c07-c03)*EdgeTierData[1]+(c06-c02+c08-c04)*EdgeTierData[0])/EdgeTierData[2] ,
