@@ -22,7 +22,7 @@
 		// Strength of Edge Sharpening. Also meant to take negative values for blurring, but this is broken; non-deterministic behavour; need to redo the maths.
 #define EdgeSharpenFactor		3			// Optimal range: 1 - 3
 		// Strength of Texture Sharpening. Also meant to take negative values for blurring, but this is broken; non-deterministic behavour; need to redo the maths.
-#define TextureSharpenFactor	6			// Optimal range: 2 - 6
+#define TextureSharpenFactor	9			// Optimal range: 2 - 6
 		// Where Texture ends and Edge starts.
 #define HighThreshold			1			// Optimal range: ~1
 		// Where gradient protection ends and Texture starts.
@@ -41,7 +41,7 @@
 		// Cancels out Haloing/Ringing around sharp edges by clamping to local min/man values. 
 #define AntiHalo				3			// 0=Off, 1=Texture Only, 2=Edge Only, 3=Both
 		// Restores some of that natural reflectiveness & 3D Pop that AntiHalo takes away.
-#define Radiance				4			// +-Percent - Optimal range: 0 - 10
+#define Radiance				1			// +-Percent - Optimal range: 0 - 10
 
 #define DeRinger				0
 
@@ -158,7 +158,13 @@ float4x4 sampleFar[6]=
 //	[c41,c19,c18,c17,c16,c15,c33]
 //	[c40,c39,c38,c37,c36,c35,c34]
 
-
+//	[c46,   ,c48,   ,c26,   ,c28]//	[   ,c47,   ,c25,   ,c27,   ]
+//	[   ,c23,   ,c09,   ,c11,   ]//	[c45,   ,c24,   ,c10,   ,c29]
+//	[c44,   ,c08,   ,c02,   ,c30]//	[   ,c22,   ,c01,   ,c12,   ]
+//	[   ,c21,   ,   ,   ,c13,   ]//	[c43,   ,c07,   ,c03,   ,c31]
+//	[c42,   ,c06,   ,c04,   ,c32]//	[   ,c20,   ,c05,   ,c14,   ]
+//	[   ,c19,   ,c17,   ,c15,   ]//	[c41,   ,c18,   ,c16,   ,c33]
+//	[c40,   ,c38,   ,c36,   ,c34]//	[   ,c39,   ,c37,   ,c35,   ]
 
 // Anti-Halo Filter //
 #if AntiHalo > 0
@@ -166,37 +172,36 @@ float4x4 sampleFar[6]=
 //for min(c**) < RangeMin == RangeMin
 //
 
-float4 RangeMin  = 0;			// Placeholder declaration...
-//	RangeMin += c00;	// Center Pixel, softens lines...
+float4 RangeMin = c00;	// For avoiding stray pixels in high contrast areas...
 	   //Neigbor
-RangeMin += min(RangeMin,min( min(c01,c05),min(c03,c07) ) )-RangeMin;
-RangeMin += min(RangeMin,min( min(c02,c07),min(c04,c08) ) )-RangeMin;
+RangeMin += min(RangeMin,min( min(c01,c05),min(c03,c07) ) )-RangeMin;									//Keep
+	RangeMin += min(RangeMin,min( min(c02,c07),min(c04,c08) ) )-RangeMin;								//Keep
        //Near
-RangeMin += min(RangeMin,min( min(c09,c17),min(c13,c21) ) )-RangeMin;
-RangeMin += min(RangeMin,min(min(min(c10,c18),min(c12,c20)),min(min(c14,c22),min(c16,c24))))-RangeMin; //Denitely Keep
-//	RangeMin += min(RangeMin,min( min(c11,c19),min(c15,c23) ) )-RangeMin;
-       //Far
+	RangeMin += min(RangeMin,min( min(c09,c17),min(c13,c21) ) )-RangeMin;								//Keep
+RangeMin += min(RangeMin,min(min(min(c10,c18),min(c12,c20)),min(min(c14,c22),min(c16,c24))))-RangeMin;	//Definitely Keep
+//	RangeMin += min(RangeMin,min( min(c11,c19),min(c15,c23) ) )-RangeMin;								// Discard
+       //Far // Cause mosquito noise like black lines
 //RangeMin += min(RangeMin,min( min(c25,c37),min(c31,c43) ) )-RangeMin;
 //	RangeMin += min(RangeMin,min(min(min(c26,c30),min(c32,c36)),min(min(c38,c42),min(c44,c48))))-RangeMin;
-//	RangeMin += min(RangeMin,min(min(min(c27,c29),min(c33,c35)),min(min(c39,c41),min(c45,c47))))-RangeMin;
-//RangeMin += min(RangeMin,min( min(c28,c34),min(c40,c46) ) )-RangeMin;
-float4 RangeMax  = 0;			// Placeholder declaration...
-//	RangeMax  += c00;	// Center Pixel, softens lines...
+//RangeMin += min(RangeMin,min(min(min(c27,c29),min(c33,c35)),min(min(c39,c41),min(c45,c47))))-RangeMin;
+//	RangeMin += min(RangeMin,min( min(c28,c34),min(c40,c46) ) )-RangeMin;
+
+float4 RangeMax  = c00;	// For avoiding stray pixels in high contrast areas...
      //Neigbor
-RangeMax += max(RangeMax,max( max(c01,c05),max(c03,c07) ) )-RangeMax;
-RangeMax += max(RangeMax,max( max(c02,c07),max(c04,c08) ) )-RangeMax;
+RangeMax += max(RangeMax,max( max(c01,c05),max(c03,c07) ) )-RangeMax;									//Keep
+	RangeMax += max(RangeMax,max( max(c02,c07),max(c04,c08) ) )-RangeMax;								//Keep		
      //Near
-RangeMax += max(RangeMax,max( max(c09,c17),max(c13,c21) ) )-RangeMax;
-RangeMax += max(RangeMax,max(max(max(c10,c18),max(c12,c20)),max(max(c14,c22),max(c16,c24))))-RangeMax; //Denitely Keep
-//	RangeMax += max(RangeMax,max( max(c11,c19),max(c15,c23) ) )-RangeMax;
-     //Far
+	RangeMax += max(RangeMax,max( max(c09,c17),max(c13,c21) ) )-RangeMax;								//Keep
+RangeMax += max(RangeMax,max(max(max(c10,c18),max(c12,c20)),max(max(c14,c22),max(c16,c24))))-RangeMax;	//Definitely Keep
+//	RangeMax += max(RangeMax,max( max(c11,c19),max(c15,c23) ) )-RangeMax;						// Discard
+     //Far // Cause mosquito noise like white lines
 //RangeMax += max(RangeMax,max( max(c25,c37),max(c31,c43) ) )-RangeMax;
 //	RangeMax += max(RangeMax,max(max(max(c26,c30),max(c32,c36)),max(max(c38,c42),max(c44,c48))))-RangeMax;
-//	RangeMax += max(RangeMax,max(max(max(c27,c29),max(c33,c35)),max(max(c39,c41),max(c45,c47))))-RangeMax;
-//RangeMax += max(RangeMax,max( max(c28,c34),max(c40,c46) ) )-RangeMax;
+//RangeMax += max(RangeMax,max(max(max(c27,c29),max(c33,c35)),max(max(c39,c41),max(c45,c47))))-RangeMax;
+//	RangeMax += max(RangeMax,max( max(c28,c34),max(c40,c46) ) )-RangeMax;
 
-RangeMin *= 1-(Radiance*.01);	// Does nothing?
-RangeMax *= 1+(Radiance*.01);	// more, white haloes, less dark haloes.
+RangeMin *= 1-(Radiance*.01);	// less, dark haloes.
+RangeMax *= 1+(Radiance*.01);	// more, bright haloes.
 #endif
 
 // -- LowPass Filter --
@@ -209,6 +214,28 @@ float4	LowPass  = 1*c00;				//	[ ^.382 ,^.618 ,^.382 ]
 		LowPass += 1*(c02+c04+c06+c08);	//	[ ^.382 ,^.618 ,^.382 ]
 		LowPass /= 9;
 #endif
+
+#define SigmoidTest 0
+
+#if SigmoidTest == 0 // Off
+float4	AdjustedCurve = c00;
+#elif SigmoidTest == 1 //
+#define GlobalSharpeningFactor 1
+float4	x = c00*2-1;
+float4	t = GlobalSharpeningFactor;
+float4	LowPass = pow( x*sqrt(1.25)+.5*x , t ) * pow( sqrt(1.25)-.5*x , t ) ;	//	(x* (sqrt(1.25)+.5*x)^t ) * ( (sqrt(1.25)-.5*x)^t )
+float4	AdjustedCurve = LowPass*.5+1;
+#elif SigmoidTest == 2 //
+float4	x = c00;
+float Pi = acos(-1);
+float4	LowPass =.5 * -sin(Pi* -x + (Pi*.5)) + .5;
+float4	AdjustedCurve = LowPass;
+#elif SigmoidTest == 3 //
+float4	x = c00;
+float4	LowPass = ( (x-.5) / (.5+abs(x-.5)) ) +.5;
+float4	AdjustedCurve = LowPass;
+#endif
+
 
 
 
@@ -512,22 +539,25 @@ float	EdgeStrength = saturate(DetectEdges.r*DetectEdges.g*DetectEdges.b);
 //
 //
 
+
+float4 MaskOffset = c00-Mask;
+
 float4 EdgeSharpeningMath;
 #if DynamicSharpening == 2 && InvertedDynamicS == 0 || DynamicSharpening == 3 && InvertedDynamicS == 0 || DynamicSharpening == 2 && InvertedDynamicS == 1 || DynamicSharpening == 3 && InvertedDynamicS == 1
-EdgeSharpeningMath = (EdgeStrength)*pow(Phi,EdgeSharpenFactor)*(c00-Mask)+c00;
+EdgeSharpeningMath = (EdgeStrength)*pow(Phi,EdgeSharpenFactor)*(MaskOffset)+AdjustedCurve;
 #elif DynamicSharpening == 2 && InvertedDynamicS == 2 || DynamicSharpening == 3 && InvertedDynamicS == 2 || DynamicSharpening == 2 && InvertedDynamicS == 3 || DynamicSharpening == 3 && InvertedDynamicS == 3
-EdgeSharpeningMath = (1/EdgeStrength)*pow(Phi,EdgeSharpenFactor)*(c00-Mask)+c00;
+EdgeSharpeningMath = (1/EdgeStrength)*pow(Phi,EdgeSharpenFactor)*(MaskOffset)+AdjustedCurve;
 #else
-EdgeSharpeningMath = pow(Phi,EdgeSharpenFactor)*(c00-Mask)+c00;
+EdgeSharpeningMath = pow(Phi,EdgeSharpenFactor)*(MaskOffset)+AdjustedCurve;
 #endif
 
 float4 TextureSharpeningMath;
 #if DynamicSharpening == 1 && InvertedDynamicS == 0 || DynamicSharpening == 3 && InvertedDynamicS == 0 || DynamicSharpening == 1 && InvertedDynamicS == 2 || DynamicSharpening == 3 && InvertedDynamicS == 2
-TextureSharpeningMath = (EdgeStrength)*pow(Phi,TextureSharpenFactor)*(c00-Mask)+c00;
+TextureSharpeningMath = (EdgeStrength)*pow(Phi,TextureSharpenFactor)*(MaskOffset)+AdjustedCurve;
 #elif DynamicSharpening == 1 && InvertedDynamicS == 1 || DynamicSharpening == 3 && InvertedDynamicS == 1 || DynamicSharpening == 1 && InvertedDynamicS == 3 || DynamicSharpening == 3 && InvertedDynamicS == 3
-TextureSharpeningMath = (1/EdgeStrength)*pow(Phi,TextureSharpenFactor)*(c00-Mask)+c00;
+TextureSharpeningMath = (1/EdgeStrength)*pow(Phi,TextureSharpenFactor)*(MaskOffset)+AdjustedCurve;
 #else
-TextureSharpeningMath = pow(Phi,TextureSharpenFactor)*(c00-Mask)+c00;
+TextureSharpeningMath = pow(Phi,TextureSharpenFactor)*(MaskOffset)+AdjustedCurve;
 #endif
 
 #if AntiHalo == 1 || AntiHalo == 3
